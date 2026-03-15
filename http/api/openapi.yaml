@@ -1,0 +1,582 @@
+openapi: "3.0.3"
+info:
+  title: Search Service API
+  version: "1.0.0"
+  description: >
+    Provides full-text / fuzzy search over indexed JSON items
+    using PostgreSQL pg_trgm strict word similarity scoring.
+  contact:
+    name: Search Service
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: search
+    description: Search operations
+  - name: storage
+    description: File download and upload operations
+
+paths:
+  /item-types:
+    get:
+      operationId: listItemTypes
+      summary: List all available item types
+      tags:
+        - search
+      description: >
+        Returns the complete list of item types defined by the database enum.
+      responses:
+        "200":
+          description: List of item type strings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemTypesResponse"
+
+  /search:
+    get:
+      operationId: searchItems
+      summary: Search indexed items
+      tags:
+        - search
+      description: >
+        Returns a ranked list of items whose searchable values match the query
+        string via pg_trgm strict word similarity.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query string.
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results to return (default 20, max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Number of results to skip for pagination (default 0).
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Ranked search results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Bad request – missing or invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /search/{item_type}:
+    get:
+      operationId: searchItemsByType
+      summary: Search items scoped to a single item type
+      tags:
+        - search
+      description: >
+        Returns a ranked list of items of the given type whose searchable
+        values match the query string via pg_trgm strict word similarity.
+      parameters:
+        - name: item_type
+          in: path
+          required: true
+          description: The type of item to search within.
+          schema:
+            $ref: "#/components/schemas/ItemType"
+        - name: q
+          in: query
+          required: true
+          description: Search query string.
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results to return (default 20, max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Number of results to skip for pagination (default 0).
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Ranked search results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Bad request – missing or invalid query parameter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /{item_type}:
+    get:
+      operationId: listItems
+      summary: List and filter items of a specific type
+      tags:
+        - search
+      description: >
+        Returns a paginated list of items for the given item type.
+        Supports optional filtering by name, creator and license.
+      parameters:
+        - name: item_type
+          in: path
+          required: true
+          description: The type of item (lowercase).
+          schema:
+            $ref: "#/components/schemas/ItemType"
+        - name: name
+          in: query
+          required: false
+          description: Filter by item name (case-insensitive substring match).
+          schema:
+            type: string
+        - name: creator
+          in: query
+          required: false
+          description: Filter by creator name (case-insensitive substring match).
+          schema:
+            type: string
+        - name: license
+          in: query
+          required: false
+          description: Filter by exact license value.
+          schema:
+            $ref: "#/components/schemas/License"
+        - name: sort
+          in: query
+          required: false
+          description: Field to sort by (default "name").
+          schema:
+            $ref: "#/components/schemas/SortField"
+        - name: order
+          in: query
+          required: false
+          description: Sort direction (default "asc").
+          schema:
+            $ref: "#/components/schemas/SortOrder"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results to return (default 20, max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Number of results to skip for pagination (default 0).
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListItemsResponse"
+        "400":
+          description: Bad request – invalid parameter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /{item_type}/{item_id}/download:
+    get:
+      operationId: downloadItem
+      summary: Download a stored item file
+      tags:
+        - storage
+      description: >
+        Streams the file for the given item from the configured storage path
+        combined with the path stored in the database.
+      parameters:
+        - name: item_type
+          in: path
+          required: true
+          description: The type of item (lowercase).
+          schema:
+            $ref: "#/components/schemas/ItemType"
+        - name: item_id
+          in: path
+          required: true
+          description: Unique identifier of the item.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: File content.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /{item_type}/{item_id}/thumbnail:
+    get:
+      operationId: downloadThumbnail
+      summary: Download the thumbnail for an item
+      tags:
+        - storage
+      description: >
+        Streams the thumbnail image for the given item. Returns 404 if the
+        item does not exist or has no thumbnail.
+      parameters:
+        - name: item_type
+          in: path
+          required: true
+          description: The type of item (lowercase).
+          schema:
+            $ref: "#/components/schemas/ItemType"
+        - name: item_id
+          in: path
+          required: true
+          description: Unique identifier of the item.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Thumbnail image content.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Item or thumbnail not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /map/{item_id}/extract:
+    get:
+      operationId: extractMapImages
+      summary: Extract all embedded images from a map file
+      tags:
+        - storage
+      description: >
+        Parses the stored map file and streams a ZIP archive containing all
+        embedded images as PNG files.
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          description: Unique identifier of the map item.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ZIP archive containing extracted PNG images.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Map not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /upload/{item_type}:
+    post:
+      operationId: uploadItem
+      summary: Upload a new item with metadata
+      tags:
+        - storage
+      description: >
+        Accepts a multipart/form-data request. The first part must be named
+        "metadata" (application/json) and the second part must be named "file"
+        (the raw file bytes). Returns the assigned item_id on success.
+      parameters:
+        - name: item_type
+          in: path
+          required: true
+          description: The type of item (lowercase).
+          schema:
+            $ref: "#/components/schemas/ItemType"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [metadata, file]
+              properties:
+                metadata:
+                  $ref: "#/components/schemas/ItemMetadata"
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Item created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: Bad request – invalid metadata or missing file part.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Item or checksum already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "507":
+          description: Insufficient storage – upload would exceed the configured limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    ItemType:
+      type: string
+      enum:
+        - map
+        - gameskin
+        - hud
+        - skin
+        - entity
+        - theme
+        - template
+        - emoticon
+
+    License:
+      type: string
+      description: |
+        Content license. Supported values:
+        - cc0          – Creative Commons Zero (public domain dedication)
+        - cc-by        – CC Attribution
+        - cc-by-sa     – CC Attribution-ShareAlike
+        - cc-by-nd     – CC Attribution-NoDerivs
+        - cc-by-nc     – CC Attribution-NonCommercial
+        - cc-by-nc-sa  – CC Attribution-NonCommercial-ShareAlike
+        - cc-by-nc-nd  – CC Attribution-NonCommercial-NoDerivs
+        - gpl-2        – GNU General Public License v2
+        - gpl-3        – GNU General Public License v3
+        - mit          – MIT License
+        - custom       – Custom / other known license
+        - unknown      – License not specified
+      enum:
+        - cc0
+        - cc-by
+        - cc-by-sa
+        - cc-by-nd
+        - cc-by-nc
+        - cc-by-nc-sa
+        - cc-by-nc-nd
+        - gpl-2
+        - gpl-3
+        - mit
+        - custom
+        - unknown
+
+    ItemMetadata:
+      type: object
+      required: [name, license, creators]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Human-readable name of the item.
+        creators:
+          type: array
+          items:
+            type: string
+          description: List of creator names.
+        license:
+          $ref: "#/components/schemas/License"
+
+    UploadResponse:
+      type: object
+      required: [item_id]
+      properties:
+        item_id:
+          type: string
+          format: uuid
+          description: Server-assigned identifier of the newly created item.
+
+    SearchResult:
+      type: object
+      required: [item_id, item_type, score, item_value]
+      properties:
+        item_id:
+          type: string
+          format: uuid
+          description: Unique identifier of the item.
+        item_type:
+          $ref: "#/components/schemas/ItemType"
+        score:
+          type: number
+          format: double
+          description: Relevance score (higher is better).
+        item_value:
+          type: object
+          description: Arbitrary JSON payload of the item.
+          additionalProperties: true
+
+    SearchResponse:
+      type: object
+      required: [results, total]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResult"
+        total:
+          type: integer
+          description: Total number of results before pagination.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+
+    ItemTypesResponse:
+      type: object
+      required: [item_types]
+      properties:
+        item_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemType"
+          description: All available item types.
+
+    ListItemsResponse:
+      type: object
+      required: [results, total]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ListItem"
+        total:
+          type: integer
+          description: Total number of results before pagination.
+
+    ListItem:
+      type: object
+      required: [item_id, item_type, item_value]
+      properties:
+        item_id:
+          type: string
+          format: uuid
+          description: Unique identifier of the item.
+        item_type:
+          $ref: "#/components/schemas/ItemType"
+        item_value:
+          type: object
+          description: Arbitrary JSON payload of the item.
+          additionalProperties: true
+
+    SortField:
+      type: string
+      description: Field to sort results by.
+      enum:
+        - name
+        - created_at
+      default: name
+
+    SortOrder:
+      type: string
+      description: Sort direction.
+      enum:
+        - asc
+        - desc
+      default: asc

@@ -1,0 +1,8 @@
+# oapi-codegen configuration – generates Chi server interface stubs only.
+# Output: http/api/server.gen.go  (package api)
+package: api
+generate:
+  chi-server: true
+  strict-server: true
+  models: false
+output: server.gen.go

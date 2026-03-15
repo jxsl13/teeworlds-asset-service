@@ -1,0 +1,6 @@
+# oapi-codegen configuration – generates API model types only.
+# Output: http/api/types.gen.go  (package api)
+package: api
+generate:
+  models: true
+output: types.gen.go

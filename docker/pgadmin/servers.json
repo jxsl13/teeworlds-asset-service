@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "search",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "search",
+      "Username": "search",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

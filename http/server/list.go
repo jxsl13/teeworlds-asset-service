@@ -1,0 +1,60 @@
+package server
+
+import (
+	"context"
+
+	"github.com/jxsl13/search-service/http/api"
+	"github.com/jxsl13/search-service/model"
+)
+
+// ListItems implements api.StrictServerInterface.
+func (s *Server) ListItems(ctx context.Context, request api.ListItemsRequestObject) (api.ListItemsResponseObject, error) {
+	limit := 20
+	if request.Params.Limit != nil {
+		limit = *request.Params.Limit
+	}
+	offset := 0
+	if request.Params.Offset != nil {
+		offset = *request.Params.Offset
+	}
+
+	sortField := "name"
+	if request.Params.Sort != nil {
+		sortField = string(*request.Params.Sort)
+	}
+	sortDesc := false
+	if request.Params.Order != nil && *request.Params.Order == api.Desc {
+		sortDesc = true
+	}
+
+	var license *string
+	if request.Params.License != nil {
+		s := string(*request.Params.License)
+		license = &s
+	}
+
+	query, err := model.NewListQuery(
+		string(request.ItemType),
+		limit,
+		offset,
+		request.Params.Name,
+		request.Params.Creator,
+		license,
+		sortField,
+		sortDesc,
+	)
+	if err != nil {
+		return api.ListItems400JSONResponse{Error: err.Error()}, nil
+	}
+
+	result, err := s.newService().ListItems(ctx, query)
+	if err != nil {
+		return api.ListItems500JSONResponse{Error: "internal server error"}, nil
+	}
+
+	resp, err := result.ToAPI()
+	if err != nil {
+		return api.ListItems500JSONResponse{Error: "failed to decode item payload"}, nil
+	}
+	return api.ListItems200JSONResponse(resp), nil
+}

@@ -1,0 +1,48 @@
+package model
+
+import "fmt"
+
+// SearchQuery is the validated input value object for the search use case.
+type SearchQuery struct {
+	Q        string
+	ItemType string // empty = all types
+	Limit    int
+	Offset   int
+}
+
+// NewSearchQuery validates and constructs a SearchQuery.
+func NewSearchQuery(q string, limit, offset int) (SearchQuery, error) {
+	if q == "" {
+		return SearchQuery{}, fmt.Errorf("query must not be empty")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return SearchQuery{Q: q, Limit: limit, Offset: offset}, nil
+}
+
+// NewSearchQueryByType validates and constructs a SearchQuery scoped to a specific item type.
+func NewSearchQueryByType(q, itemType string, limit, offset int) (SearchQuery, error) {
+	if q == "" {
+		return SearchQuery{}, fmt.Errorf("query must not be empty")
+	}
+	if itemType == "" {
+		return SearchQuery{}, fmt.Errorf("item_type must not be empty")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return SearchQuery{Q: q, ItemType: itemType, Limit: limit, Offset: offset}, nil
+}
