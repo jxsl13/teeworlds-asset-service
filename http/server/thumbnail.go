@@ -4,6 +4,7 @@ import (
 	"context"
 	stdsql "database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -23,7 +24,7 @@ func (s *Server) DownloadThumbnail(ctx context.Context, request api.DownloadThum
 		if errors.Is(err, stdsql.ErrNoRows) {
 			return api.DownloadThumbnail404JSONResponse{Error: "thumbnail not found"}, nil
 		}
-		return api.DownloadThumbnail500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("get thumbnail path: %w", err)
 	}
 	if !thumbPath.Valid || thumbPath.String == "" {
 		return api.DownloadThumbnail404JSONResponse{Error: "thumbnail not found"}, nil
@@ -34,13 +35,13 @@ func (s *Server) DownloadThumbnail(ctx context.Context, request api.DownloadThum
 		if errors.Is(err, os.ErrNotExist) {
 			return api.DownloadThumbnail404JSONResponse{Error: "thumbnail file not found"}, nil
 		}
-		return api.DownloadThumbnail500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("open thumbnail file: %w", err)
 	}
 
 	stat, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		return api.DownloadThumbnail500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("stat thumbnail file: %w", err)
 	}
 
 	return api.DownloadThumbnail200ImagepngResponse{

@@ -26,7 +26,7 @@ func (s *Server) ExtractMapImages(ctx context.Context, request api.ExtractMapIma
 		if errors.Is(err, stdsql.ErrNoRows) {
 			return api.ExtractMapImages404JSONResponse{Error: "map not found"}, nil
 		}
-		return api.ExtractMapImages500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("get map file path: %w", err)
 	}
 
 	f, err := s.fsys.Open(filepath.FromSlash(relPath))
@@ -34,13 +34,13 @@ func (s *Server) ExtractMapImages(ctx context.Context, request api.ExtractMapIma
 		if errors.Is(err, os.ErrNotExist) {
 			return api.ExtractMapImages404JSONResponse{Error: "map file not found"}, nil
 		}
-		return api.ExtractMapImages500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("open map file: %w", err)
 	}
 
 	m, err := twmap.Parse(f)
 	_ = f.Close()
 	if err != nil {
-		return api.ExtractMapImages500JSONResponse{Error: "failed to parse map"}, nil
+		return nil, fmt.Errorf("parse map: %w", err)
 	}
 
 	// Filter to embedded images only.

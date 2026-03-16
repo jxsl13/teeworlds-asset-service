@@ -19,81 +19,99 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Render the main UI page
+	// (GET /)
+	RenderUI(w http.ResponseWriter, r *http.Request)
 	// List all available item types
-	// (GET /item-types)
+	// (GET /api/item-types)
 	ListItemTypes(w http.ResponseWriter, r *http.Request)
 	// Extract all embedded images from a map file
-	// (GET /map/{item_id}/extract)
+	// (GET /api/map/{item_id}/extract)
 	ExtractMapImages(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID)
 	// Search indexed items
-	// (GET /search)
+	// (GET /api/search)
 	SearchItems(w http.ResponseWriter, r *http.Request, params SearchItemsParams)
 	// Search items scoped to a single item type
-	// (GET /search/{item_type})
+	// (GET /api/search/{item_type})
 	SearchItemsByType(w http.ResponseWriter, r *http.Request, itemType ItemType, params SearchItemsByTypeParams)
 	// Upload a new item with metadata
-	// (POST /upload/{item_type})
+	// (POST /api/upload/{item_type})
 	UploadItem(w http.ResponseWriter, r *http.Request, itemType ItemType)
 	// List and filter items of a specific type
-	// (GET /{item_type})
+	// (GET /api/{item_type})
 	ListItems(w http.ResponseWriter, r *http.Request, itemType ItemType, params ListItemsParams)
 	// Download a stored item file
-	// (GET /{item_type}/{item_id}/download)
+	// (GET /api/{item_type}/{item_id}/download)
 	DownloadItem(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID)
 	// Download the thumbnail for an item
-	// (GET /{item_type}/{item_id}/thumbnail)
+	// (GET /api/{item_type}/{item_id}/thumbnail)
 	DownloadThumbnail(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID)
+	// Render an HTML fragment listing items
+	// (GET /{item_type})
+	RenderItemList(w http.ResponseWriter, r *http.Request, itemType ItemType, params RenderItemListParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
 
+// Render the main UI page
+// (GET /)
+func (_ Unimplemented) RenderUI(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List all available item types
-// (GET /item-types)
+// (GET /api/item-types)
 func (_ Unimplemented) ListItemTypes(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Extract all embedded images from a map file
-// (GET /map/{item_id}/extract)
+// (GET /api/map/{item_id}/extract)
 func (_ Unimplemented) ExtractMapImages(w http.ResponseWriter, r *http.Request, itemId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Search indexed items
-// (GET /search)
+// (GET /api/search)
 func (_ Unimplemented) SearchItems(w http.ResponseWriter, r *http.Request, params SearchItemsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Search items scoped to a single item type
-// (GET /search/{item_type})
+// (GET /api/search/{item_type})
 func (_ Unimplemented) SearchItemsByType(w http.ResponseWriter, r *http.Request, itemType ItemType, params SearchItemsByTypeParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Upload a new item with metadata
-// (POST /upload/{item_type})
+// (POST /api/upload/{item_type})
 func (_ Unimplemented) UploadItem(w http.ResponseWriter, r *http.Request, itemType ItemType) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // List and filter items of a specific type
-// (GET /{item_type})
+// (GET /api/{item_type})
 func (_ Unimplemented) ListItems(w http.ResponseWriter, r *http.Request, itemType ItemType, params ListItemsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Download a stored item file
-// (GET /{item_type}/{item_id}/download)
+// (GET /api/{item_type}/{item_id}/download)
 func (_ Unimplemented) DownloadItem(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Download the thumbnail for an item
-// (GET /{item_type}/{item_id}/thumbnail)
+// (GET /api/{item_type}/{item_id}/thumbnail)
 func (_ Unimplemented) DownloadThumbnail(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Render an HTML fragment listing items
+// (GET /{item_type})
+func (_ Unimplemented) RenderItemList(w http.ResponseWriter, r *http.Request, itemType ItemType, params RenderItemListParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -105,6 +123,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// RenderUI operation middleware
+func (siw *ServerInterfaceWrapper) RenderUI(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenderUI(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListItemTypes operation middleware
 func (siw *ServerInterfaceWrapper) ListItemTypes(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +463,58 @@ func (siw *ServerInterfaceWrapper) DownloadThumbnail(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// RenderItemList operation middleware
+func (siw *ServerInterfaceWrapper) RenderItemList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "item_type" -------------
+	var itemType ItemType
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_type", chi.URLParam(r, "item_type"), &itemType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RenderItemListParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenderItemList(w, r, itemType, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -545,31 +629,72 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/item-types", wrapper.ListItemTypes)
+		r.Get(options.BaseURL+"/", wrapper.RenderUI)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/map/{item_id}/extract", wrapper.ExtractMapImages)
+		r.Get(options.BaseURL+"/api/item-types", wrapper.ListItemTypes)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/search", wrapper.SearchItems)
+		r.Get(options.BaseURL+"/api/map/{item_id}/extract", wrapper.ExtractMapImages)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/search/{item_type}", wrapper.SearchItemsByType)
+		r.Get(options.BaseURL+"/api/search", wrapper.SearchItems)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/upload/{item_type}", wrapper.UploadItem)
+		r.Get(options.BaseURL+"/api/search/{item_type}", wrapper.SearchItemsByType)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/{item_type}", wrapper.ListItems)
+		r.Post(options.BaseURL+"/api/upload/{item_type}", wrapper.UploadItem)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/{item_type}/{item_id}/download", wrapper.DownloadItem)
+		r.Get(options.BaseURL+"/api/{item_type}", wrapper.ListItems)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/{item_type}/{item_id}/thumbnail", wrapper.DownloadThumbnail)
+		r.Get(options.BaseURL+"/api/{item_type}/{item_id}/download", wrapper.DownloadItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/{item_type}/{item_id}/thumbnail", wrapper.DownloadThumbnail)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/{item_type}", wrapper.RenderItemList)
 	})
 
 	return r
+}
+
+type RenderUIRequestObject struct {
+}
+
+type RenderUIResponseObject interface {
+	VisitRenderUIResponse(w http.ResponseWriter) error
+}
+
+type RenderUI200TexthtmlResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response RenderUI200TexthtmlResponse) VisitRenderUIResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "text/html")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type RenderUI500JSONResponse ErrorResponse
+
+func (response RenderUI500JSONResponse) VisitRenderUIResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
 }
 
 type ListItemTypesRequestObject struct {
@@ -886,32 +1011,84 @@ func (response DownloadThumbnail500JSONResponse) VisitDownloadThumbnailResponse(
 	return json.NewEncoder(w).Encode(response)
 }
 
+type RenderItemListRequestObject struct {
+	ItemType ItemType `json:"item_type"`
+	Params   RenderItemListParams
+}
+
+type RenderItemListResponseObject interface {
+	VisitRenderItemListResponse(w http.ResponseWriter) error
+}
+
+type RenderItemList200TexthtmlResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response RenderItemList200TexthtmlResponse) VisitRenderItemListResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "text/html")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type RenderItemList400JSONResponse ErrorResponse
+
+func (response RenderItemList400JSONResponse) VisitRenderItemListResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RenderItemList500JSONResponse ErrorResponse
+
+func (response RenderItemList500JSONResponse) VisitRenderItemListResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Render the main UI page
+	// (GET /)
+	RenderUI(ctx context.Context, request RenderUIRequestObject) (RenderUIResponseObject, error)
 	// List all available item types
-	// (GET /item-types)
+	// (GET /api/item-types)
 	ListItemTypes(ctx context.Context, request ListItemTypesRequestObject) (ListItemTypesResponseObject, error)
 	// Extract all embedded images from a map file
-	// (GET /map/{item_id}/extract)
+	// (GET /api/map/{item_id}/extract)
 	ExtractMapImages(ctx context.Context, request ExtractMapImagesRequestObject) (ExtractMapImagesResponseObject, error)
 	// Search indexed items
-	// (GET /search)
+	// (GET /api/search)
 	SearchItems(ctx context.Context, request SearchItemsRequestObject) (SearchItemsResponseObject, error)
 	// Search items scoped to a single item type
-	// (GET /search/{item_type})
+	// (GET /api/search/{item_type})
 	SearchItemsByType(ctx context.Context, request SearchItemsByTypeRequestObject) (SearchItemsByTypeResponseObject, error)
 	// Upload a new item with metadata
-	// (POST /upload/{item_type})
+	// (POST /api/upload/{item_type})
 	UploadItem(ctx context.Context, request UploadItemRequestObject) (UploadItemResponseObject, error)
 	// List and filter items of a specific type
-	// (GET /{item_type})
+	// (GET /api/{item_type})
 	ListItems(ctx context.Context, request ListItemsRequestObject) (ListItemsResponseObject, error)
 	// Download a stored item file
-	// (GET /{item_type}/{item_id}/download)
+	// (GET /api/{item_type}/{item_id}/download)
 	DownloadItem(ctx context.Context, request DownloadItemRequestObject) (DownloadItemResponseObject, error)
 	// Download the thumbnail for an item
-	// (GET /{item_type}/{item_id}/thumbnail)
+	// (GET /api/{item_type}/{item_id}/thumbnail)
 	DownloadThumbnail(ctx context.Context, request DownloadThumbnailRequestObject) (DownloadThumbnailResponseObject, error)
+	// Render an HTML fragment listing items
+	// (GET /{item_type})
+	RenderItemList(ctx context.Context, request RenderItemListRequestObject) (RenderItemListResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -941,6 +1118,30 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// RenderUI operation middleware
+func (sh *strictHandler) RenderUI(w http.ResponseWriter, r *http.Request) {
+	var request RenderUIRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenderUI(ctx, request.(RenderUIRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenderUI")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenderUIResponseObject); ok {
+		if err := validResponse.VisitRenderUIResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListItemTypes operation middleware
@@ -1153,6 +1354,33 @@ func (sh *strictHandler) DownloadThumbnail(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DownloadThumbnailResponseObject); ok {
 		if err := validResponse.VisitDownloadThumbnailResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenderItemList operation middleware
+func (sh *strictHandler) RenderItemList(w http.ResponseWriter, r *http.Request, itemType ItemType, params RenderItemListParams) {
+	var request RenderItemListRequestObject
+
+	request.ItemType = itemType
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenderItemList(ctx, request.(RenderItemListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenderItemList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenderItemListResponseObject); ok {
+		if err := validResponse.VisitRenderItemListResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

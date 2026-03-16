@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jxsl13/search-service/http/api"
 	"github.com/jxsl13/search-service/model"
@@ -49,12 +50,12 @@ func (s *Server) ListItems(ctx context.Context, request api.ListItemsRequestObje
 
 	result, err := s.newService().ListItems(ctx, query)
 	if err != nil {
-		return api.ListItems500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("list items: %w", err)
 	}
 
 	resp, err := result.ToAPI()
 	if err != nil {
-		return api.ListItems500JSONResponse{Error: "failed to decode item payload"}, nil
+		return nil, fmt.Errorf("decode list results: %w", err)
 	}
 	return api.ListItems200JSONResponse(resp), nil
 }

@@ -286,5 +286,17 @@ type ListItemsParams struct {
 	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// RenderItemListParams defines parameters for RenderItemList.
+type RenderItemListParams struct {
+	// Q Optional fuzzy search query.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Limit Maximum number of results (default 20, max 100).
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Offset Pagination offset (default 0).
+	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // UploadItemMultipartRequestBody defines body for UploadItem for multipart/form-data ContentType.
 type UploadItemMultipartRequestBody UploadItemMultipartBody

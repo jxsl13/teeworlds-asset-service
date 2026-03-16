@@ -2,6 +2,10 @@ package server
 
 import (
 	stdsql "database/sql"
+	"embed"
+	"fmt"
+	"html/template"
+	"io/fs"
 	"net/http"
 	"os"
 
@@ -9,6 +13,19 @@ import (
 	"github.com/jxsl13/search-service/http/service"
 	sqlc "github.com/jxsl13/search-service/sql"
 )
+
+//go:embed static
+var staticFS embed.FS
+
+//go:embed templates
+var templateFS embed.FS
+
+// StaticFS returns the embedded static assets as an http.FileSystem
+// for serving /static/* in the router.
+func StaticFS() http.FileSystem {
+	sub, _ := fs.Sub(staticFS, "static")
+	return http.FS(sub)
+}
 
 // Server holds the dependencies injected at startup and implements api.StrictServerInterface.
 type Server struct {
@@ -18,6 +35,8 @@ type Server struct {
 	maxStorageSize int64
 	validator      *Validator
 	thumbnailSize  config.Resolution
+	layoutTpl      *template.Template
+	itemsTpl       *template.Template
 }
 
 // New creates a Server from a *sql.DB and prepared *sqlc.Queries.
@@ -27,6 +46,14 @@ func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath stri
 	if err != nil {
 		return nil, err
 	}
+	layoutTpl, err := template.ParseFS(templateFS, "templates/layout.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse layout: %w", err)
+	}
+	itemsTpl, err := template.ParseFS(templateFS, "templates/items.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse items: %w", err)
+	}
 	return &Server{
 		dao:            sqlc.NewDAO(db, q),
 		fsys:           http.Dir(storagePath),
@@ -34,6 +61,8 @@ func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath stri
 		maxStorageSize: maxStorageSize,
 		validator:      NewValidator(allowedResolutions, maxUploadSizes),
 		thumbnailSize:  thumbnailSize,
+		layoutTpl:      layoutTpl,
+		itemsTpl:       itemsTpl,
 	}, nil
 }
 

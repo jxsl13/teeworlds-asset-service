@@ -1,0 +1,31 @@
+<div class="items-grid">
+  {{if .Items}}
+    {{range .Items}}
+    <div class="item-card">
+      {{if .HasThumbnail}}
+      <img class="thumb" src="/api/{{.ItemType}}/{{.ItemID}}/thumbnail" alt="{{.Name}}" loading="lazy">
+      {{else}}
+      <div class="thumb-placeholder">{{.ItemType}}</div>
+      {{end}}
+      <div class="info">
+        <div class="name" title="{{.Name}}">{{.Name}}</div>
+        <div class="meta" title="{{.Creators}}">{{.Creators}}</div>
+        <div class="actions">
+          <a href="/api/{{.ItemType}}/{{.ItemID}}/download" title="Download">&#x2B07; download</a>
+          {{if eq .ItemType "map"}}<a href="/api/map/{{.ItemID}}/extract" title="Extract embedded images as ZIP">&#x1F5BC; images</a>{{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+  {{else}}
+    <div class="empty-state">No items found.</div>
+  {{end}}
+</div>
+
+{{if .Items}}
+<div class="pagination">
+  <button hx-get="{{.PrevURL}}" hx-target="#content" {{if le .Offset 0}}disabled{{end}}>&laquo; Prev</button>
+  <span class="page-info">{{.PageStart}}&ndash;{{.PageEnd}} of {{.Total}}</span>
+  <button hx-get="{{.NextURL}}" hx-target="#content" {{if ge .PageEnd .Total}}disabled{{end}}>Next &raquo;</button>
+</div>
+{{end}}

@@ -17,9 +17,94 @@ tags:
     description: Search operations
   - name: storage
     description: File download and upload operations
+  - name: ui
+    description: HTMX-powered web frontend
 
 paths:
-  /item-types:
+  /:
+    get:
+      operationId: renderUI
+      summary: Render the main UI page
+      tags:
+        - ui
+      description: >
+        Returns the full HTML page with embedded HTMX that serves as the
+        web frontend. Also accessible via /index.html.
+      responses:
+        "200":
+          description: Full HTML page.
+          content:
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /{item_type}:
+    get:
+      operationId: renderItemList
+      summary: Render an HTML fragment listing items
+      tags:
+        - ui
+      description: >
+        Returns an HTML fragment for HTMX swap. When the query parameter q is
+        provided the fragment shows fuzzy-search results, otherwise a
+        paginated alphabetical listing.
+      parameters:
+        - name: item_type
+          in: path
+          required: true
+          description: The type of item to list.
+          schema:
+            $ref: "#/components/schemas/ItemType"
+        - name: q
+          in: query
+          required: false
+          description: Optional fuzzy search query.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results (default 20, max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Pagination offset (default 0).
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: HTML fragment with items grid and pagination.
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Bad request – invalid parameter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/item-types:
     get:
       operationId: listItemTypes
       summary: List all available item types
@@ -35,7 +120,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ItemTypesResponse"
 
-  /search:
+  /api/search:
     get:
       operationId: searchItems
       summary: Search indexed items
@@ -89,7 +174,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /search/{item_type}:
+  /api/search/{item_type}:
     get:
       operationId: searchItemsByType
       summary: Search items scoped to a single item type
@@ -149,7 +234,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /{item_type}:
+  /api/{item_type}:
     get:
       operationId: listItems
       summary: List and filter items of a specific type
@@ -232,7 +317,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /{item_type}/{item_id}/download:
+  /api/{item_type}/{item_id}/download:
     get:
       operationId: downloadItem
       summary: Download a stored item file
@@ -276,7 +361,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /{item_type}/{item_id}/thumbnail:
+  /api/{item_type}/{item_id}/thumbnail:
     get:
       operationId: downloadThumbnail
       summary: Download the thumbnail for an item
@@ -320,7 +405,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /map/{item_id}/extract:
+  /api/map/{item_id}/extract:
     get:
       operationId: extractMapImages
       summary: Extract all embedded images from a map file
@@ -358,7 +443,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /upload/{item_type}:
+  /api/upload/{item_type}:
     post:
       operationId: uploadItem
       summary: Upload a new item with metadata

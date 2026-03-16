@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
@@ -73,14 +75,44 @@ func run() error {
 	}
 	defer srv.Close()
 
-	handler := api.HandlerWithOptions(
-		api.NewStrictHandler(srv, nil),
-		api.ChiServerOptions{},
+	r := chi.NewRouter()
+
+	// Structured request logging for every request.
+	r.Use(httpserver.RequestLogger)
+
+	// Extract client IP and store in context for audit logging.
+	r.Use(httpserver.ClientIPMiddleware)
+
+	// Parse HTMX request headers into context for all requests.
+	r.Use(httpserver.HtmxMiddleware)
+
+	// Serve embedded static assets (htmx.min.js etc.).
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(httpserver.StaticFS())))
+
+	// Mount all API + UI routes (generated from OpenAPI spec).
+	//
+	// The ResponseErrorHandlerFunc handles truly unexpected errors returned
+	// as Go errors from strict server handlers. It logs the actual error
+	// server-side but sends only a generic message to the client.
+	strict := api.NewStrictHandlerWithOptions(srv, nil, api.StrictHTTPServerOptions{
+		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		},
+		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			slog.Error("unhandled response error", "method", r.Method, "path", r.URL.Path, "err", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "internal server error"})
+		},
+	})
+	api.HandlerWithOptions(
+		strict,
+		api.ChiServerOptions{BaseRouter: r},
 	)
 
 	httpSrv := &http.Server{
 		Addr:         cfg.Addr,
-		Handler:      handler,
+		Handler:      r,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

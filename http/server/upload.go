@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 
@@ -33,7 +34,6 @@ type uploadContext struct {
 	itemType api.ItemType
 	meta     api.ItemMetadata
 
-	tmpName  string // temp file name in s.tmpDir (e.g. "<uuid>.map")
 	ext      string // file extension including dot
 	size     int64
 	checksum string
@@ -47,6 +47,10 @@ type uploadContext struct {
 // tmpThumbName returns the temp file name used for a generated thumbnail.
 func (u *uploadContext) tmpThumbName() string {
 	return u.itemID.String() + "_thumb.png"
+}
+
+func (u *uploadContext) tmpName() string {
+	return u.itemID.String() + u.ext
 }
 
 // UploadItem implements api.StrictServerInterface.
@@ -63,7 +67,7 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 
 	itemID, err := uuid.NewV7()
 	if err != nil {
-		return api.UploadItem500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("generate item ID: %w", err)
 	}
 
 	uc := &uploadContext{
@@ -72,11 +76,10 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		meta:     meta,
 		ext:      fileExtension(request.ItemType),
 	}
-	uc.tmpName = itemID.String() + uc.ext //FIXME: redundant, because it can be constructed as a method call
 
 	// ── Stream, validate, generate thumbnail ─────────────────────────────────
-	if resp := s.receiveFile(uc, filePart); resp != nil {
-		return resp, nil
+	if resp, err := s.receiveFile(uc, filePart); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// From this point on, temp files exist. Ensure they are cleaned up on any
@@ -88,20 +91,20 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		}
 	}()
 
-	if resp := s.validateUpload(uc); resp != nil {
-		return resp, nil
+	if resp, err := s.validateUpload(uc); resp != nil || err != nil {
+		return resp, err
 	}
 	s.buildStoragePaths(uc)
-	if resp := s.prepareThumbnail(uc); resp != nil {
-		return resp, nil
+	if resp, err := s.prepareThumbnail(uc); resp != nil || err != nil {
+		return resp, err
 	}
 
 	// ── Persist & finalise ───────────────────────────────────────────────────
-	if resp := s.persistUpload(ctx, uc); resp != nil {
-		return resp, nil
+	if resp, err := s.persistUpload(ctx, uc); resp != nil || err != nil {
+		return resp, err
 	}
-	if resp := s.moveToStorage(uc); resp != nil {
-		return resp, nil
+	if err := s.moveToStorage(uc); err != nil {
+		return nil, err
 	}
 	committed = true
 
@@ -134,11 +137,12 @@ func (s *Server) parseFilePart(request api.UploadItemRequestObject) (io.Reader, 
 }
 
 // receiveFile streams the upload into a temp file, enforcing the size limit.
-func (s *Server) receiveFile(uc *uploadContext, filePart io.Reader) api.UploadItemResponseObject {
-	tmpFile, err := s.tmpDir.OpenFile(uc.tmpName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+func (s *Server) receiveFile(uc *uploadContext, filePart io.Reader) (api.UploadItemResponseObject, error) {
+	tmpFile, err := s.tmpDir.OpenFile(uc.tmpName(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
 	if err != nil {
-		return api.UploadItem500JSONResponse{Error: "internal server error"}
+		return nil, fmt.Errorf("create temp file: %w", err)
 	}
+	defer tmpFile.Close()
 
 	var fileReader io.Reader = filePart
 	maxSize, hasLimit := s.validator.MaxUploadSize(string(uc.itemType))
@@ -147,30 +151,29 @@ func (s *Server) receiveFile(uc *uploadContext, filePart io.Reader) api.UploadIt
 	}
 
 	size, checksum, err := hashAndWrite(fileReader, tmpFile)
-	_ = tmpFile.Close()
 	if err != nil {
-		_ = s.tmpDir.Remove(uc.tmpName)
-		return api.UploadItem500JSONResponse{Error: "internal server error"}
+		_ = s.tmpDir.Remove(uc.tmpName())
+		return nil, fmt.Errorf("receive upload: %w", err)
 	}
 
 	if hasLimit && size > maxSize {
-		_ = s.tmpDir.Remove(uc.tmpName)
+		_ = s.tmpDir.Remove(uc.tmpName())
 		return api.UploadItem400JSONResponse{
 			Error: fmt.Sprintf("file exceeds maximum %d bytes for item type %q", maxSize, uc.itemType),
-		}
+		}, nil
 	}
 
 	uc.size = size
 	uc.checksum = checksum
-	return nil
+	return nil, nil
 }
 
 // validateUpload checks the file format and resolution.
-func (s *Server) validateUpload(uc *uploadContext) api.UploadItemResponseObject {
-	if errResp := s.validator.ValidateFile(uc.itemType, s.tmpDir, uc.tmpName); errResp != nil {
-		return api.UploadItem400JSONResponse{Error: errResp.Error}
+func (s *Server) validateUpload(uc *uploadContext) (api.UploadItemResponseObject, error) {
+	if errResp := s.validator.ValidateFile(uc.itemType, s.tmpDir, uc.tmpName()); errResp != nil {
+		return api.UploadItem400JSONResponse{Error: errResp.Error}, nil
 	}
-	return nil
+	return nil, nil
 }
 
 // buildStoragePaths computes the permanent relative and absolute file paths.
@@ -193,10 +196,10 @@ func (s *Server) buildStoragePaths(uc *uploadContext) {
 //   - Image-based types that already fit within the bounding box need no extra
 //     thumbnail file. Their item_thumbnail_path points back to the original
 //     item file (relPath), so the thumbnail endpoint serves the source directly.
-func (s *Server) prepareThumbnail(uc *uploadContext) api.UploadItemResponseObject {
-	thumbPath, err := s.generateThumbnail(uc.itemType, uc.itemID, s.tmpDir, uc.tmpName)
+func (s *Server) prepareThumbnail(uc *uploadContext) (api.UploadItemResponseObject, error) {
+	thumbPath, err := s.generateThumbnail(uc.itemType, uc.itemID, s.tmpDir, uc.tmpName())
 	if err != nil {
-		return api.UploadItem500JSONResponse{Error: "internal server error"}
+		return nil, fmt.Errorf("generate thumbnail: %w", err)
 	}
 
 	if thumbPath.Valid {
@@ -208,14 +211,14 @@ func (s *Server) prepareThumbnail(uc *uploadContext) api.UploadItemResponseObjec
 		uc.thumbnailPath = stdsql.NullString{String: uc.relPath, Valid: true}
 	}
 	// Maps that fail to render get thumbnailPath = NULL (no thumbnail).
-	return nil
+	return nil, nil
 }
 
 // persistUpload inserts the item, metadata & search values inside a transaction.
-func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) api.UploadItemResponseObject {
+func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.UploadItemResponseObject, error) {
 	itemValue, err := json.Marshal(uc.meta)
 	if err != nil {
-		return api.UploadItem500JSONResponse{Error: "internal server error"}
+		return nil, fmt.Errorf("marshal metadata: %w", err)
 	}
 
 	txErr := s.dao.Tx(ctx, func(tx sqlc.DAO) error {
@@ -236,7 +239,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) api.Uploa
 			return errStorageLimitExceeded
 		}
 
-		if err := tx.InsertItemMetadata(ctx, buildMetadataParams(uc.itemID)); err != nil {
+		if err := tx.InsertItemMetadata(ctx, buildMetadataParams(ctx, uc.itemID)); err != nil {
 			return err
 		}
 
@@ -251,19 +254,19 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) api.Uploa
 	if txErr != nil {
 		return classifyTxError(txErr)
 	}
-	return nil
+	return nil, nil
 }
 
 // moveToStorage moves the temp item file (and optional thumbnail) to permanent storage.
-func (s *Server) moveToStorage(uc *uploadContext) api.UploadItemResponseObject {
-	if err := moveFile(s.tmpDir, uc.tmpName, uc.absPath); err != nil {
-		return api.UploadItem500JSONResponse{Error: "internal server error"}
+func (s *Server) moveToStorage(uc *uploadContext) error {
+	if err := moveFile(s.tmpDir, uc.tmpName(), uc.absPath); err != nil {
+		return fmt.Errorf("move item file: %w", err)
 	}
 
 	if uc.hasTempThumb {
 		thumbAbsPath := filepath.Join(string(s.fsys), filepath.FromSlash(uc.thumbnailPath.String))
 		if err := moveFile(s.tmpDir, uc.tmpThumbName(), thumbAbsPath); err != nil {
-			return api.UploadItem500JSONResponse{Error: "internal server error"}
+			return fmt.Errorf("move thumbnail file: %w", err)
 		}
 	}
 	return nil
@@ -377,7 +380,7 @@ func (s *Server) writeThumbnailPNG(itemID uuid.UUID, tmpDir *os.Root, img image.
 
 // cleanupTemp removes the uploaded temp file and optional thumbnail temp file.
 func (s *Server) cleanupTemp(uc *uploadContext) {
-	_ = s.tmpDir.Remove(uc.tmpName)
+	_ = s.tmpDir.Remove(uc.tmpName())
 	if uc.hasTempThumb {
 		_ = s.tmpDir.Remove(uc.tmpThumbName())
 	}
@@ -392,15 +395,17 @@ func moveFile(tmpDir *os.Root, tmpName, absPath string) error {
 }
 
 // classifyTxError maps known DB errors to the appropriate HTTP response.
-func classifyTxError(txErr error) api.UploadItemResponseObject {
+// Returns (response, nil) for expected DB errors (409, 507) and (nil, error)
+// for truly unexpected failures.
+func classifyTxError(txErr error) (api.UploadItemResponseObject, error) {
 	var pgErr *pgconn.PgError
 	if errors.As(txErr, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-		return api.UploadItem409JSONResponse{Error: "item or checksum already exists"}
+		return api.UploadItem409JSONResponse{Error: "item or checksum already exists"}, nil
 	}
 	if errors.Is(txErr, errStorageLimitExceeded) {
-		return api.UploadItem507JSONResponse{Error: "storage limit exceeded"}
+		return api.UploadItem507JSONResponse{Error: "storage limit exceeded"}, nil
 	}
-	return api.UploadItem500JSONResponse{Error: "internal server error"}
+	return nil, fmt.Errorf("persist upload: %w", txErr)
 }
 
 // fitInBox calculates the largest dimensions that fit within maxW×maxH
@@ -450,10 +455,17 @@ func metaToSearchValues(id uuid.UUID, meta api.ItemMetadata) []sqlc.InsertSearch
 }
 
 // buildMetadataParams populates the DB audit row.
-func buildMetadataParams(itemID uuid.UUID) sqlc.InsertItemMetadataParams {
+func buildMetadataParams(ctx context.Context, itemID uuid.UUID) sqlc.InsertItemMetadataParams {
+	ip := clientIPFromContext(ctx)
 	return sqlc.InsertItemMetadataParams{
-		ItemID:    itemID,
-		CreatorIp: pqtype.Inet{},
+		ItemID: itemID,
+		CreatorIp: pqtype.Inet{
+			IPNet: net.IPNet{
+				IP:   net.ParseIP(ip),
+				Mask: net.CIDRMask(128, 128),
+			},
+			Valid: ip != "" && net.ParseIP(ip) != nil,
+		},
 	}
 }
 

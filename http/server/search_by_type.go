@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jxsl13/search-service/http/api"
 	"github.com/jxsl13/search-service/model"
@@ -25,12 +26,12 @@ func (s *Server) SearchItemsByType(ctx context.Context, request api.SearchItemsB
 
 	result, err := s.newService().Search(ctx, query)
 	if err != nil {
-		return api.SearchItemsByType500JSONResponse{Error: "internal server error"}, nil
+		return nil, fmt.Errorf("search by type: %w", err)
 	}
 
 	resp, err := result.ToAPI()
 	if err != nil {
-		return api.SearchItemsByType500JSONResponse{Error: "failed to decode item payload"}, nil
+		return nil, fmt.Errorf("decode search results: %w", err)
 	}
 	return api.SearchItemsByType200JSONResponse(resp), nil
 }
