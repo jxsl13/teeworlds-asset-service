@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jxsl13/search-service/http/api"
-	"github.com/jxsl13/search-service/model"
-	sqlc "github.com/jxsl13/search-service/sql"
+	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/model"
+	sqlc "github.com/jxsl13/asset-service/sql"
 )
 
 // RenderUI implements api.StrictServerInterface.

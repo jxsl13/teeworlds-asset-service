@@ -15,9 +15,9 @@ import (
 )
 
 const insertItem = `-- name: InsertItem :execrows
-INSERT INTO search_item (item_id, item_type, size, checksum, item_file_path, item_thumbnail_path, item_value)
-SELECT $1, $2, $3, $4, $5, $7, $6
-WHERE (SELECT total_size FROM storage_stats) + $3 <= $8
+INSERT INTO search_item (item_id, item_type, size, checksum, item_file_path, item_thumbnail_path, item_value, original_filename)
+SELECT $1, $2, $3, $4, $5, $8, $6, $7
+WHERE (SELECT total_size FROM storage_stats) + $3 <= $9
 `
 
 type InsertItemParams struct {
@@ -27,6 +27,7 @@ type InsertItemParams struct {
 	Checksum          string          `db:"checksum"`
 	ItemFilePath      string          `db:"item_file_path"`
 	ItemValue         json.RawMessage `db:"item_value"`
+	OriginalFilename  string          `db:"original_filename"`
 	ItemThumbnailPath sql.NullString  `db:"item_thumbnail_path"`
 	MaxTotalSize      int64           `db:"max_total_size"`
 }
@@ -39,6 +40,7 @@ func (q *Queries) InsertItem(ctx context.Context, arg InsertItemParams) (int64, 
 		arg.Checksum,
 		arg.ItemFilePath,
 		arg.ItemValue,
+		arg.OriginalFilename,
 		arg.ItemThumbnailPath,
 		arg.MaxTotalSize,
 	)

@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	oapitypes "github.com/oapi-codegen/runtime/types"
 
-	"github.com/jxsl13/search-service/http/api"
-	sqlc "github.com/jxsl13/search-service/sql"
+	"github.com/jxsl13/asset-service/http/api"
+	sqlc "github.com/jxsl13/asset-service/sql"
 )
 
 // ListResult is the output value object of the list items use case.

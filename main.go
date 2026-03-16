@@ -15,10 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/jxsl13/search-service/config"
-	"github.com/jxsl13/search-service/http/api"
-	httpserver "github.com/jxsl13/search-service/http/server"
-	postgresql "github.com/jxsl13/search-service/sql"
+	"github.com/jxsl13/asset-service/config"
+	"github.com/jxsl13/asset-service/http/api"
+	httpserver "github.com/jxsl13/asset-service/http/server"
+	postgresql "github.com/jxsl13/asset-service/sql"
 )
 
 func main() {
@@ -69,7 +69,7 @@ func run() error {
 	}
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
-	srv, err := httpserver.New(sqlDB, queries, cfg.StoragePath, cfg.TempUploadPath, cfg.MaxStorageSize, cfg.AllowedResolutions, cfg.MaxUploadSizes, cfg.ThumbnailSize)
+	srv, err := httpserver.New(sqlDB, queries, cfg.StoragePath, cfg.TempUploadPath, cfg.MaxStorageSize, cfg.AllowedResolutions, cfg.MaxUploadSizes, cfg.ThumbnailSizes)
 	if err != nil {
 		return fmt.Errorf("server: %w", err)
 	}

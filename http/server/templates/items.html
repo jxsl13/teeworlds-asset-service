@@ -1,26 +1,26 @@
-<div class="items-grid">
+<table class="items-table">
   {{if .Items}}
     {{range .Items}}
-    <div class="item-card">
-      {{if .HasThumbnail}}
-      <img class="thumb" src="/api/{{.ItemType}}/{{.ItemID}}/thumbnail" alt="{{.Name}}" loading="lazy" onclick="openPreview(this.src)">
-      {{else}}
-      <div class="thumb-placeholder">{{.ItemType}}</div>
-      {{end}}
-      <div class="info">
-        <div class="name" title="{{.Name}}">{{.Name}}</div>
-        <div class="meta" title="{{.Creators}}">{{.Creators}}</div>
-        <div class="actions">
-          <a href="/api/{{.ItemType}}/{{.ItemID}}/download" title="Download">&#x2B07; download</a>
-          {{if eq .ItemType "map"}}<a href="/api/map/{{.ItemID}}/extract" title="Extract embedded images as ZIP">&#x1F5BC; images</a>{{end}}
-        </div>
-      </div>
-    </div>
+    <tr data-type="{{.ItemType}}">
+      <td class="col-thumb">
+        {{if .HasThumbnail}}
+        <img src="/api/{{.ItemType}}/{{.ItemID}}/thumbnail" alt="{{.Name}}" loading="lazy" onclick="openPreview(this.src)">
+        {{else}}
+        <div class="thumb-placeholder">{{.ItemType}}</div>
+        {{end}}
+      </td>
+      <td class="col-name">{{.Name}}</td>
+      <td class="col-creator">{{.Creators}}</td>
+      <td class="col-actions">
+        <a href="/api/{{.ItemType}}/{{.ItemID}}/download" title="Download">Download</a>
+        {{if eq .ItemType "map"}}<a href="/api/map/{{.ItemID}}/extract" title="Extract embedded images as ZIP">Images</a>{{end}}
+      </td>
+    </tr>
     {{end}}
   {{else}}
-    <div class="empty-state">No items found.</div>
+    <tr><td colspan="4" class="empty-state">No items found.</td></tr>
   {{end}}
-</div>
+</table>
 
 {{if .Items}}
 <div class="pagination">

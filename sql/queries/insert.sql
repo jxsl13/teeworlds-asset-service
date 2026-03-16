@@ -1,6 +1,6 @@
 -- name: InsertItem :execrows
-INSERT INTO search_item (item_id, item_type, size, checksum, item_file_path, item_thumbnail_path, item_value)
-SELECT $1, $2, $3, $4, $5, sqlc.narg(item_thumbnail_path), $6
+INSERT INTO search_item (item_id, item_type, size, checksum, item_file_path, item_thumbnail_path, item_value, original_filename)
+SELECT $1, $2, $3, $4, $5, sqlc.narg(item_thumbnail_path), $6, $7
 WHERE (SELECT total_size FROM storage_stats) + $3 <= sqlc.arg(max_total_size);
 
 -- name: InsertItemMetadata :exec

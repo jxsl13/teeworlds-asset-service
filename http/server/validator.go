@@ -5,9 +5,9 @@ import (
 	"image/png"
 	"os"
 
-	"github.com/jxsl13/search-service/config"
-	"github.com/jxsl13/search-service/http/api"
-	"github.com/jxsl13/search-service/internal/twmap"
+	"github.com/jxsl13/asset-service/config"
+	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/internal/twmap"
 )
 
 // ItemTypeConfig holds the validation constraints for a single item type.

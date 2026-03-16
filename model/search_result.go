@@ -1,8 +1,8 @@
 package model
 
 import (
-	"github.com/jxsl13/search-service/http/api"
-	sqlc "github.com/jxsl13/search-service/sql"
+	"github.com/jxsl13/asset-service/http/api"
+	sqlc "github.com/jxsl13/asset-service/sql"
 )
 
 // SearchResult is the output value object of the search use case.

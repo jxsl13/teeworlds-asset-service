@@ -11,14 +11,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jxsl13/search-service/http/api"
-	"github.com/jxsl13/search-service/internal/twmap"
-	sqlc "github.com/jxsl13/search-service/sql"
+	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/internal/twmap"
+	sqlc "github.com/jxsl13/asset-service/sql"
 )
 
 // ExtractMapImages implements api.StrictServerInterface.
 func (s *Server) ExtractMapImages(ctx context.Context, request api.ExtractMapImagesRequestObject) (api.ExtractMapImagesResponseObject, error) {
-	relPath, err := s.dao.GetItemFilePath(ctx, sqlc.GetItemFilePathParams{
+	row, err := s.dao.GetItemFilePath(ctx, sqlc.GetItemFilePathParams{
 		ItemID:   request.ItemId,
 		ItemType: sqlc.ItemTypeEnumMap,
 	})
@@ -29,7 +29,7 @@ func (s *Server) ExtractMapImages(ctx context.Context, request api.ExtractMapIma
 		return nil, fmt.Errorf("get map file path: %w", err)
 	}
 
-	f, err := s.fsys.Open(filepath.FromSlash(relPath))
+	f, err := s.fsys.Open(filepath.FromSlash(row.ItemFilePath))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return api.ExtractMapImages404JSONResponse{Error: "map file not found"}, nil

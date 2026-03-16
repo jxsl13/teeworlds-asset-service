@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/jxsl13/search-service/config"
-	"github.com/jxsl13/search-service/http/service"
-	sqlc "github.com/jxsl13/search-service/sql"
+	"github.com/jxsl13/asset-service/config"
+	"github.com/jxsl13/asset-service/http/service"
+	sqlc "github.com/jxsl13/asset-service/sql"
 )
 
 //go:embed static
@@ -34,14 +34,14 @@ type Server struct {
 	tmpDir         *os.Root
 	maxStorageSize int64
 	validator      *Validator
-	thumbnailSize  config.Resolution
+	thumbnailSizes map[string]config.Resolution
 	layoutTpl      *template.Template
 	itemsTpl       *template.Template
 }
 
 // New creates a Server from a *sql.DB and prepared *sqlc.Queries.
 // It opens tempUploadPath as a sandboxed os.Root for temporary upload files.
-func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath string, maxStorageSize int64, allowedResolutions map[string][]config.Resolution, maxUploadSizes map[string]int64, thumbnailSize config.Resolution) (*Server, error) {
+func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath string, maxStorageSize int64, allowedResolutions map[string][]config.Resolution, maxUploadSizes map[string]int64, thumbnailSizes map[string]config.Resolution) (*Server, error) {
 	tmpRoot, err := os.OpenRoot(tempUploadPath)
 	if err != nil {
 		return nil, err
@@ -60,7 +60,7 @@ func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath stri
 		tmpDir:         tmpRoot,
 		maxStorageSize: maxStorageSize,
 		validator:      NewValidator(allowedResolutions, maxUploadSizes),
-		thumbnailSize:  thumbnailSize,
+		thumbnailSizes: thumbnailSizes,
 		layoutTpl:      layoutTpl,
 		itemsTpl:       itemsTpl,
 	}, nil

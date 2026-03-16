@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"mime/multipart"
 	"net"
 	"os"
 	"path/filepath"
@@ -18,10 +19,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
-	"github.com/jxsl13/search-service/http/api"
-	"github.com/jxsl13/search-service/internal/twmap"
-	"github.com/jxsl13/search-service/internal/twskin"
-	sqlc "github.com/jxsl13/search-service/sql"
+	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/internal/twmap"
+	"github.com/jxsl13/asset-service/internal/twskin"
+	sqlc "github.com/jxsl13/asset-service/sql"
 	"github.com/sqlc-dev/pqtype"
 	"golang.org/x/image/draw"
 )
@@ -34,9 +35,10 @@ type uploadContext struct {
 	itemType api.ItemType
 	meta     api.ItemMetadata
 
-	ext      string // file extension including dot
-	size     int64
-	checksum string
+	ext              string // file extension including dot
+	originalFilename string // original filename from the upload
+	size             int64
+	checksum         string
 
 	relPath       string            // permanent storage path for the item file
 	absPath       string            // absolute OS path for the item file
@@ -60,7 +62,7 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		return api.UploadItem400JSONResponse{Error: err.Error()}, nil
 	}
 
-	filePart, err := s.parseFilePart(request)
+	filePart, filename, err := s.parseFilePart(request)
 	if err != nil {
 		return api.UploadItem400JSONResponse{Error: err.Error()}, nil
 	}
@@ -71,10 +73,11 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 	}
 
 	uc := &uploadContext{
-		itemID:   itemID,
-		itemType: request.ItemType,
-		meta:     meta,
-		ext:      fileExtension(request.ItemType),
+		itemID:           itemID,
+		itemType:         request.ItemType,
+		meta:             meta,
+		ext:              fileExtension(request.ItemType),
+		originalFilename: filename,
 	}
 
 	// ── Stream, validate, generate thumbnail ─────────────────────────────────
@@ -128,12 +131,13 @@ func (s *Server) parseMetadata(request api.UploadItemRequestObject) (api.ItemMet
 }
 
 // parseFilePart reads the file part of the multipart request.
-func (s *Server) parseFilePart(request api.UploadItemRequestObject) (io.Reader, error) {
+// Returns the part reader and the original filename.
+func (s *Server) parseFilePart(request api.UploadItemRequestObject) (*multipart.Part, string, error) {
 	filePart, err := request.Body.NextPart()
 	if err != nil || filePart.FormName() != "file" {
-		return nil, fmt.Errorf("second multipart part must be named \"file\"")
+		return nil, "", fmt.Errorf("second multipart part must be named \"file\"")
 	}
-	return filePart, nil
+	return filePart, filePart.FileName(), nil
 }
 
 // receiveFile streams the upload into a temp file, enforcing the size limit.
@@ -230,6 +234,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 			ItemFilePath:      uc.relPath,
 			ItemThumbnailPath: uc.thumbnailPath,
 			ItemValue:         itemValue,
+			OriginalFilename:  uc.originalFilename,
 			MaxTotalSize:      s.maxStorageSize,
 		})
 		if err != nil {
@@ -279,7 +284,11 @@ func (s *Server) moveToStorage(uc *uploadContext) error {
 // separate file was written, or an invalid NullString when no file was created.
 func (s *Server) generateThumbnail(itemType api.ItemType, itemID uuid.UUID, tmpDir *os.Root, tmpName string) (stdsql.NullString, error) {
 	thumbRelPath := fmt.Sprintf("/%s/thumbnails/%s.png", itemType, itemID)
-	maxW, maxH := s.thumbnailSize.Width, s.thumbnailSize.Height
+	size, ok := s.thumbnailSizes[string(itemType)]
+	if !ok {
+		return stdsql.NullString{}, nil // no thumbnail config for this type
+	}
+	maxW, maxH := size.Width, size.Height
 
 	switch itemType {
 	case api.Map:

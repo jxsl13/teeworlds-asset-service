@@ -1,5 +1,5 @@
 -- name: GetItemFilePath :one
-SELECT item_file_path
+SELECT item_file_path, original_filename
 FROM   search_item
 WHERE  item_id   = $1
 AND    item_type = $2;

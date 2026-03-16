@@ -1,4 +1,4 @@
-module github.com/jxsl13/search-service
+module github.com/jxsl13/asset-service
 
 go 1.25.2
 

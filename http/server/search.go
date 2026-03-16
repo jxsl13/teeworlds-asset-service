@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jxsl13/search-service/http/api"
-	"github.com/jxsl13/search-service/model"
+	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/model"
 )
 
 // SearchItems implements api.StrictServerInterface.

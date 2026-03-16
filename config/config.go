@@ -55,11 +55,17 @@ type Config struct {
 	// Defaults are derived from the largest allowed resolution per type.
 	MaxUploadSizes map[string]int64
 
-	// ThumbnailSize is the bounding box (width × height) for generated thumbnails.
-	// Images that exceed this box are scaled down; smaller images keep their
-	// original file as the thumbnail. Maps are always rendered at this size.
-	// Env: THUMBNAIL_SIZE (default: 512x512, format: WxH)
-	ThumbnailSize Resolution
+	// ThumbnailSizes maps each item type to the bounding box (width × height)
+	// used when generating thumbnails. Images exceeding the box are scaled down;
+	// smaller images keep their original file as the thumbnail.
+	//
+	// Env per type: THUMBNAIL_SIZE_MAP, THUMBNAIL_SIZE_SKIN, etc. (format: WxH)
+	//
+	// Defaults:
+	//   map  → 1920×1080
+	//   skin → 64×64
+	//   others → smallest allowed resolution
+	ThumbnailSizes map[string]Resolution
 }
 
 // Load reads configuration from environment variables, validates required
@@ -157,14 +163,17 @@ func Load() (Config, error) {
 		}
 	}
 
-	// ── Thumbnail bounding box ────────────────────────────────────────────────
-	cfg.ThumbnailSize = Resolution{Width: 1024, Height: 1024}
-	if raw := os.Getenv("THUMBNAIL_SIZE"); raw != "" {
-		w, h, err := parseWxH(raw)
-		if err != nil {
-			return Config{}, fmt.Errorf("THUMBNAIL_SIZE: %w", err)
+	// ── Thumbnail bounding box per item type ──────────────────────────────────
+	cfg.ThumbnailSizes = DefaultThumbnailSizes()
+	for _, itemType := range []string{"map", "gameskin", "hud", "skin", "entity", "theme", "template", "emoticon"} {
+		envKey := "THUMBNAIL_SIZE_" + strings.ToUpper(itemType)
+		if raw := os.Getenv(envKey); raw != "" {
+			w, h, err := parseWxH(raw)
+			if err != nil {
+				return Config{}, fmt.Errorf("%s: %w", envKey, err)
+			}
+			cfg.ThumbnailSizes[itemType] = Resolution{Width: w, Height: h}
 		}
-		cfg.ThumbnailSize = Resolution{Width: w, Height: h}
 	}
 
 	return cfg, nil

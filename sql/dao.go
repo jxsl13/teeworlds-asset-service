@@ -11,7 +11,7 @@ type DAO interface {
 	Search(ctx context.Context, arg SearchParams) ([]SearchRow, error)
 	SearchByType(ctx context.Context, arg SearchByTypeParams) ([]SearchByTypeRow, error)
 	ListItems(ctx context.Context, arg ListItemsParams) ([]ListItemsRow, error)
-	GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (string, error)
+	GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (GetItemFilePathRow, error)
 	GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (stdsql.NullString, error)
 	InsertItem(ctx context.Context, arg InsertItemParams) (int64, error)
 	InsertItemMetadata(ctx context.Context, arg InsertItemMetadataParams) error
@@ -43,7 +43,7 @@ func (d *dao) ListItems(ctx context.Context, arg ListItemsParams) ([]ListItemsRo
 	return d.q.ListItems(ctx, arg)
 }
 
-func (d *dao) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (string, error) {
+func (d *dao) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (GetItemFilePathRow, error) {
 	return d.q.GetItemFilePath(ctx, arg)
 }
 

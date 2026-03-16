@@ -99,6 +99,7 @@ type SearchItem struct {
 	ItemFilePath      string          `db:"item_file_path"`
 	ItemThumbnailPath sql.NullString  `db:"item_thumbnail_path"`
 	ItemValue         json.RawMessage `db:"item_value"`
+	OriginalFilename  string          `db:"original_filename"`
 }
 
 type SearchItemMetadatum struct {

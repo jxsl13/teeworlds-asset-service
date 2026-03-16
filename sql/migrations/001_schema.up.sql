@@ -37,6 +37,7 @@ CREATE TABLE search_item (
             )
         ),
     item_value          JSONB          NOT NULL,
+    original_filename   TEXT           NOT NULL DEFAULT '',
     CONSTRAINT search_item_type_checksum_key UNIQUE (item_type, checksum)
 );
 

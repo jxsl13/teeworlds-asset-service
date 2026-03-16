@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
-	postgresql "github.com/jxsl13/search-service/sql"
+	postgresql "github.com/jxsl13/asset-service/sql"
 )
 
 // devEnv reads key=value pairs from docker/dev.env relative to the module root

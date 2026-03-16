@@ -106,9 +106,71 @@ var DefaultResolutions = map[string][]Resolution{
 		{Width: 5120, Height: 2880},
 		{Width: 7680, Height: 4320},
 	},
-	"template": {
-		{Width: 1920, Height: 1080},
-	},
+	// "template" is populated by init() below from all image-type resolutions.
+}
+
+func init() {
+	DefaultResolutions["template"] = collectImageResolutions()
+}
+
+// collectImageResolutions gathers all unique resolutions from every image-based
+// item type (everything except "map" and "template" itself) and returns them
+// sorted by total pixel count ascending.
+func collectImageResolutions() []Resolution {
+	seen := make(map[Resolution]struct{})
+	for itemType, resolutions := range DefaultResolutions {
+		if itemType == "map" || itemType == "template" {
+			continue
+		}
+		for _, r := range resolutions {
+			seen[r] = struct{}{}
+		}
+	}
+	out := make([]Resolution, 0, len(seen))
+	for r := range seen {
+		out = append(out, r)
+	}
+	// Sort by pixel count ascending, then width as tiebreaker.
+	for i := range out {
+		for j := i + 1; j < len(out); j++ {
+			pi := int64(out[i].Width) * int64(out[i].Height)
+			pj := int64(out[j].Width) * int64(out[j].Height)
+			if pj < pi || (pj == pi && out[j].Width < out[i].Width) {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
+}
+
+// DefaultThumbnailSizes returns the default thumbnail bounding box per item type.
+//
+//   - map:  1920×1080 (rendered preview)
+//   - skin: 64×64     (composited idle tee)
+//   - others: smallest allowed resolution from DefaultResolutions
+//
+// Types without a default resolution entry get no thumbnail size (absent from map).
+func DefaultThumbnailSizes() map[string]Resolution {
+	m := map[string]Resolution{
+		"map":  {Width: 1920, Height: 1080},
+		"skin": {Width: 64, Height: 64},
+	}
+	for itemType, resolutions := range DefaultResolutions {
+		if _, ok := m[itemType]; ok {
+			continue // already set with an explicit override
+		}
+		if len(resolutions) == 0 {
+			continue
+		}
+		smallest := resolutions[0]
+		for _, r := range resolutions[1:] {
+			if int64(r.Width)*int64(r.Height) < int64(smallest.Width)*int64(smallest.Height) {
+				smallest = r
+			}
+		}
+		m[itemType] = smallest
+	}
+	return m
 }
 
 // ParseResolutions parses a comma-separated list of WxH pairs (e.g. "256x128,512x512").

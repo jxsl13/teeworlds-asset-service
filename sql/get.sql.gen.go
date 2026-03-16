@@ -13,7 +13,7 @@ import (
 )
 
 const getItemFilePath = `-- name: GetItemFilePath :one
-SELECT item_file_path
+SELECT item_file_path, original_filename
 FROM   search_item
 WHERE  item_id   = $1
 AND    item_type = $2
@@ -24,11 +24,16 @@ type GetItemFilePathParams struct {
 	ItemType ItemTypeEnum `db:"item_type"`
 }
 
-func (q *Queries) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (string, error) {
+type GetItemFilePathRow struct {
+	ItemFilePath     string `db:"item_file_path"`
+	OriginalFilename string `db:"original_filename"`
+}
+
+func (q *Queries) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (GetItemFilePathRow, error) {
 	row := q.queryRow(ctx, q.getItemFilePathStmt, getItemFilePath, arg.ItemID, arg.ItemType)
-	var item_file_path string
-	err := row.Scan(&item_file_path)
-	return item_file_path, err
+	var i GetItemFilePathRow
+	err := row.Scan(&i.ItemFilePath, &i.OriginalFilename)
+	return i, err
 }
 
 const getItemThumbnailPath = `-- name: GetItemThumbnailPath :one
