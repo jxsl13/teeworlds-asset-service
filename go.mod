@@ -3,6 +3,7 @@ module github.com/jxsl13/asset-service
 go 1.25.2
 
 require (
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/donseba/go-htmx v1.12.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.2.5
@@ -15,6 +16,7 @@ require (
 	github.com/oapi-codegen/runtime v1.2.0
 	github.com/sqlc-dev/pqtype v0.3.0
 	golang.org/x/image v0.37.0
+	golang.org/x/oauth2 v0.36.0
 )
 
 require (
@@ -27,6 +29,7 @@ require (
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/getkin/kin-openapi v0.133.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
