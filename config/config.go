@@ -158,7 +158,7 @@ func Load() (Config, error) {
 	}
 
 	// ── Thumbnail bounding box ────────────────────────────────────────────────
-	cfg.ThumbnailSize = Resolution{Width: 512, Height: 512}
+	cfg.ThumbnailSize = Resolution{Width: 1024, Height: 1024}
 	if raw := os.Getenv("THUMBNAIL_SIZE"); raw != "" {
 		w, h, err := parseWxH(raw)
 		if err != nil {

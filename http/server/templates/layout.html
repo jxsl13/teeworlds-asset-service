@@ -325,6 +325,28 @@
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: inline; }
     .spinner { color: var(--accent); font-size: 0.8rem; }
+
+    /* ── Preview Modal ── */
+    .preview-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    .preview-backdrop.open { display: flex; }
+    .preview-backdrop img {
+      max-width: 90vw;
+      max-height: 90vh;
+      image-rendering: pixelated;
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      background: #0a0a1a;
+    }
+    .item-card .thumb { cursor: zoom-in; }
   </style>
 </head>
 <body>
@@ -350,7 +372,7 @@
       <div class="search-box">
         <input type="search" id="search" name="q" placeholder="Search&hellip;"
                hx-get="/{{.ActiveType}}"
-               hx-trigger="input changed delay:300ms, search"
+               hx-trigger="input changed delay:100ms, search"
                hx-target="#content"
                hx-include="this"
                autocomplete="off"
@@ -407,8 +429,27 @@
     </div>
   </div>
 
+  <!-- Image Preview Modal -->
+  <div class="preview-backdrop" id="previewModal" onclick="closePreview()">
+    <img id="previewImg" src="" alt="Preview">
+  </div>
+
   <script>
     let activeType = '{{.ActiveType}}';
+
+    function openPreview(src) {
+      document.getElementById('previewImg').src = src;
+      document.getElementById('previewModal').classList.add('open');
+    }
+
+    function closePreview() {
+      document.getElementById('previewModal').classList.remove('open');
+      document.getElementById('previewImg').src = '';
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closePreview();
+    });
 
     function switchTab(btn) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));

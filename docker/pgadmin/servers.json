@@ -8,7 +8,7 @@
       "MaintenanceDB": "search",
       "Username": "search",
       "SSLMode": "prefer",
-      "PassFile": "/pgpass"
+      "PassFile": "/.pgpass"
     }
   }
 }

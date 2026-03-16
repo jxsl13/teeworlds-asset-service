@@ -3,7 +3,7 @@
     {{range .Items}}
     <div class="item-card">
       {{if .HasThumbnail}}
-      <img class="thumb" src="/api/{{.ItemType}}/{{.ItemID}}/thumbnail" alt="{{.Name}}" loading="lazy">
+      <img class="thumb" src="/api/{{.ItemType}}/{{.ItemID}}/thumbnail" alt="{{.Name}}" loading="lazy" onclick="openPreview(this.src)">
       {{else}}
       <div class="thumb-placeholder">{{.ItemType}}</div>
       {{end}}
