@@ -166,7 +166,7 @@ func parseDatafile(r io.Reader) (*datafile, error) {
 
 func checkHeader(hr *headerRest) error {
 	if hr.NumItemTypes < 0 {
-		return fmt.Errorf("negative num_item_types: %d", hr.NumItemTypes)
+		return fmt.Errorf("negative num_asset_types: %d", hr.NumItemTypes)
 	}
 	if hr.NumItems < 0 {
 		return fmt.Errorf("negative num_items: %d", hr.NumItems)

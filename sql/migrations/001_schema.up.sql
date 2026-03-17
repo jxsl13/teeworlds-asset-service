@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- Plain CREATE TYPE so sqlc can infer the enum values for Go code generation.
 -- golang-migrate tracks executed versions, so idempotency via DO $$ is not needed.
-CREATE TYPE item_type_enum AS ENUM (
+CREATE TYPE asset_type_enum AS ENUM (
     'map',
     'gameskin',
     'hud',
@@ -14,14 +14,28 @@ CREATE TYPE item_type_enum AS ENUM (
     'emoticon'
 );
 
--- One row per searchable item.
--- item_id is the sole PK so that search_value can hold a simple FK reference to it.
-CREATE TABLE search_item (
-    item_id             UUID           PRIMARY KEY,
-    item_type           item_type_enum NOT NULL,
-    size                BIGINT         NOT NULL DEFAULT 0,
-    checksum            VARCHAR(128)   NOT NULL,
-    item_file_path      TEXT           NOT NULL
+-- Logical grouping of group_key (e.g. 'resolution') variants.
+-- Each group has a single asset_type and a unique name within that type.
+-- Metadata (name, creators, license) lives here because it is shared across resolutions.
+CREATE TABLE asset_group (
+    group_id    UUID            PRIMARY KEY,
+    asset_type  asset_type_enum NOT NULL,
+    group_name  TEXT            NOT NULL, -- user defined name, e.g. skin name
+    group_key   TEXT            NOT NULL, -- e.g. resolution
+    CONSTRAINT asset_group_type_name_key UNIQUE (asset_type, group_key, group_name)
+);
+
+CREATE INDEX asset_group_asset_type_group_key_group_name_idx ON asset_group (asset_type, group_key, group_name);
+
+
+-- One row per uploaded file (one variant within a group, e.g. a specific resolution).
+CREATE TABLE asset_item (
+    group_id            UUID            NOT NULL REFERENCES asset_group (group_id) ON DELETE CASCADE,
+    item_id             UUID            PRIMARY KEY,
+    group_value         TEXT            NOT NULL, -- e.g. 512x256
+    size                BIGINT          NOT NULL,
+    checksum            VARCHAR(128)    NOT NULL,
+    item_file_path      TEXT            NOT NULL
         CHECK (
             item_file_path <> ''
             AND item_file_path NOT LIKE '%..%'
@@ -36,34 +50,20 @@ CREATE TABLE search_item (
                 AND item_thumbnail_path LIKE '/%'
             )
         ),
-    item_value          JSONB          NOT NULL,
-    original_filename   TEXT           NOT NULL DEFAULT '',
-    CONSTRAINT search_item_type_checksum_key UNIQUE (item_type, checksum)
+    original_filename   TEXT NOT NULL DEFAULT '',
+    -- we assume that there is not supposed to be a checksum collision across asset types,
+    -- otherwise we'd have to also keep track of the asset_type in this table
+    CONSTRAINT asset_asset_type_checksum_key UNIQUE (checksum),
+    -- there can only be a single e.g. resolution 1920x1080 for a given group
+    CONSTRAINT asset_item_group_variant_key UNIQUE (group_id, group_value)
 );
 
-CREATE INDEX search_item_id_item_type_idx ON search_item (item_id,item_type);
-
--- Per-field relevance multipliers used at query time to rank results.
-CREATE TABLE search_value_weight (
-    key_name VARCHAR(256) PRIMARY KEY,
-    weight   REAL
-);
-
--- Individual searchable key/value pairs for each item.
--- Cascades on delete so removing a search_item cleans up all its search values.
--- PK includes key_value to allow multiple values per key (e.g. multiple creators).
-CREATE TABLE search_value (
-    item_id   UUID         REFERENCES search_item (item_id) ON DELETE CASCADE,
-    key_name  VARCHAR(256) NOT NULL,
-    key_value TEXT         NOT NULL,
-    PRIMARY KEY (item_id, key_name, key_value)
-);
-
-CREATE INDEX search_value_key_value_trgm_idx ON search_value USING GIN (key_value gin_trgm_ops);
+CREATE INDEX asset_item_group_id_idx ON asset_item (group_id, group_value);
+CREATE INDEX asset_item_checksum_idx ON asset_item (checksum);
 
 -- Creation metadata for each search item (audit trail).
-CREATE TABLE search_item_metadata (
-    item_id          UUID        PRIMARY KEY REFERENCES search_item (item_id) ON DELETE CASCADE,
+CREATE TABLE asset_item_metadata (
+    item_id          UUID        PRIMARY KEY REFERENCES asset_item (item_id) ON DELETE CASCADE,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     creator_ip       INET        NOT NULL,
     creator_agent    TEXT        NOT NULL DEFAULT '',
@@ -72,3 +72,23 @@ CREATE TABLE search_item_metadata (
     content_type     TEXT        NOT NULL DEFAULT '',
     request_id       TEXT        NOT NULL DEFAULT ''
 );
+
+-- Per-field relevance multipliers used at query time to rank results.
+CREATE TABLE search_value_weight (
+    key_name VARCHAR(256) PRIMARY KEY,
+    weight   REAL
+);
+
+-- Individual searchable key/value pairs for each group.
+-- Cascades on delete so removing an asset_group cleans up all its search values.
+-- PK includes key_value to allow multiple values per key (e.g. multiple creators).
+CREATE TABLE search_value (
+    group_id  UUID         REFERENCES asset_group (group_id) ON DELETE CASCADE,
+    key_name  VARCHAR(256) NOT NULL,
+    key_value TEXT         NOT NULL,
+    PRIMARY KEY (group_id, key_name, key_value)
+);
+
+CREATE INDEX search_value_key_value_trgm_idx ON search_value USING GIN (key_value gin_trgm_ops);
+
+

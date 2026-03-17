@@ -12,16 +12,137 @@ import (
 	"github.com/google/uuid"
 )
 
+const getGroupFilePath = `-- name: GetGroupFilePath :one
+SELECT ai.item_file_path, ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.group_id   = $1
+AND    ag.asset_type  = $2
+ORDER BY ai.size ASC
+LIMIT 1
+`
+
+type GetGroupFilePathParams struct {
+	GroupID   uuid.UUID     `db:"group_id"`
+	AssetType AssetTypeEnum `db:"asset_type"`
+}
+
+type GetGroupFilePathRow struct {
+	ItemFilePath     string `db:"item_file_path"`
+	OriginalFilename string `db:"original_filename"`
+}
+
+func (q *Queries) GetGroupFilePath(ctx context.Context, arg GetGroupFilePathParams) (GetGroupFilePathRow, error) {
+	row := q.queryRow(ctx, q.getGroupFilePathStmt, getGroupFilePath, arg.GroupID, arg.AssetType)
+	var i GetGroupFilePathRow
+	err := row.Scan(&i.ItemFilePath, &i.OriginalFilename)
+	return i, err
+}
+
+const getGroupFiles = `-- name: GetGroupFiles :many
+SELECT ag.group_name, ai.group_value, ai.item_file_path, ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.group_id   = $1
+AND    ag.asset_type  = $2
+ORDER BY ai.size ASC
+`
+
+type GetGroupFilesParams struct {
+	GroupID   uuid.UUID     `db:"group_id"`
+	AssetType AssetTypeEnum `db:"asset_type"`
+}
+
+type GetGroupFilesRow struct {
+	GroupName        string `db:"group_name"`
+	GroupValue       string `db:"group_value"`
+	ItemFilePath     string `db:"item_file_path"`
+	OriginalFilename string `db:"original_filename"`
+}
+
+func (q *Queries) GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([]GetGroupFilesRow, error) {
+	rows, err := q.query(ctx, q.getGroupFilesStmt, getGroupFiles, arg.GroupID, arg.AssetType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetGroupFilesRow{}
+	for rows.Next() {
+		var i GetGroupFilesRow
+		if err := rows.Scan(
+			&i.GroupName,
+			&i.GroupValue,
+			&i.ItemFilePath,
+			&i.OriginalFilename,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getGroupThumbnailPath = `-- name: GetGroupThumbnailPath :one
+SELECT ai.item_thumbnail_path
+FROM   asset_item ai
+WHERE  ai.group_id = $1
+AND    ai.item_thumbnail_path IS NOT NULL
+ORDER BY ai.size ASC
+LIMIT 1
+`
+
+func (q *Queries) GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (sql.NullString, error) {
+	row := q.queryRow(ctx, q.getGroupThumbnailPathStmt, getGroupThumbnailPath, groupID)
+	var item_thumbnail_path sql.NullString
+	err := row.Scan(&item_thumbnail_path)
+	return item_thumbnail_path, err
+}
+
+const getItemByChecksum = `-- name: GetItemByChecksum :one
+SELECT ai.item_id, ag.group_id, ag.asset_type, ag.group_name, ai.group_value
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.checksum = $1
+`
+
+type GetItemByChecksumRow struct {
+	ItemID     uuid.UUID     `db:"item_id"`
+	GroupID    uuid.UUID     `db:"group_id"`
+	AssetType  AssetTypeEnum `db:"asset_type"`
+	GroupName  string        `db:"group_name"`
+	GroupValue string        `db:"group_value"`
+}
+
+func (q *Queries) GetItemByChecksum(ctx context.Context, checksum string) (GetItemByChecksumRow, error) {
+	row := q.queryRow(ctx, q.getItemByChecksumStmt, getItemByChecksum, checksum)
+	var i GetItemByChecksumRow
+	err := row.Scan(
+		&i.ItemID,
+		&i.GroupID,
+		&i.AssetType,
+		&i.GroupName,
+		&i.GroupValue,
+	)
+	return i, err
+}
+
 const getItemFilePath = `-- name: GetItemFilePath :one
-SELECT item_file_path, original_filename
-FROM   search_item
-WHERE  item_id   = $1
-AND    item_type = $2
+SELECT ai.item_file_path, ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.item_id    = $1
+AND    ag.asset_type  = $2
 `
 
 type GetItemFilePathParams struct {
-	ItemID   uuid.UUID    `db:"item_id"`
-	ItemType ItemTypeEnum `db:"item_type"`
+	ItemID    uuid.UUID     `db:"item_id"`
+	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
 type GetItemFilePathRow struct {
@@ -30,27 +151,28 @@ type GetItemFilePathRow struct {
 }
 
 func (q *Queries) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (GetItemFilePathRow, error) {
-	row := q.queryRow(ctx, q.getItemFilePathStmt, getItemFilePath, arg.ItemID, arg.ItemType)
+	row := q.queryRow(ctx, q.getItemFilePathStmt, getItemFilePath, arg.ItemID, arg.AssetType)
 	var i GetItemFilePathRow
 	err := row.Scan(&i.ItemFilePath, &i.OriginalFilename)
 	return i, err
 }
 
 const getItemThumbnailPath = `-- name: GetItemThumbnailPath :one
-SELECT item_thumbnail_path
-FROM   search_item
-WHERE  item_id   = $1
-AND    item_type = $2
-AND    item_thumbnail_path IS NOT NULL
+SELECT ai.item_thumbnail_path
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.item_id    = $1
+AND    ag.asset_type  = $2
+AND    ai.item_thumbnail_path IS NOT NULL
 `
 
 type GetItemThumbnailPathParams struct {
-	ItemID   uuid.UUID    `db:"item_id"`
-	ItemType ItemTypeEnum `db:"item_type"`
+	ItemID    uuid.UUID     `db:"item_id"`
+	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
 func (q *Queries) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (sql.NullString, error) {
-	row := q.queryRow(ctx, q.getItemThumbnailPathStmt, getItemThumbnailPath, arg.ItemID, arg.ItemType)
+	row := q.queryRow(ctx, q.getItemThumbnailPathStmt, getItemThumbnailPath, arg.ItemID, arg.AssetType)
 	var item_thumbnail_path sql.NullString
 	err := row.Scan(&item_thumbnail_path)
 	return item_thumbnail_path, err

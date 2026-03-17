@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 //go:generate rm -f db.gen.go models.gen.go search.sql.gen.go insert.sql.gen.go get.sql.gen.go list.sql.gen.go
@@ -27,13 +27,22 @@ var ErrItemAlreadyExists = errors.New("item already exists")
 // the same type with an identical checksum already exists in the database.
 var ErrDuplicateChecksum = errors.New("item with same type and checksum already exists")
 
-// constraintTypeChecksum is the explicit name of the (item_type, checksum)
+// ErrDuplicateVariant is returned when the same group_key+group_value already
+// exists within a group (e.g. same resolution uploaded twice).
+var ErrDuplicateVariant = errors.New("variant already exists in this group")
+
+// constraintTypeChecksum is the explicit name of the (checksum)
 // unique constraint defined in the schema migration.
-const constraintTypeChecksum = "search_item_type_checksum_key"
+const constraintTypeChecksum = "asset_asset_type_checksum_key"
+
+// constraintGroupVariant is the explicit name of the (group_id, group_key, group_value)
+// unique constraint defined in the schema migration.
+const constraintGroupVariant = "asset_item_group_variant_key"
 
 // InsertItemChecked wraps the generated InsertItem and returns
 // ErrStorageLimitExceeded when the storage limit would be exceeded,
-// ErrDuplicateChecksum when an item with the same type+checksum exists, or
+// ErrDuplicateChecksum when an item with the same type+checksum exists,
+// ErrDuplicateVariant when the same variant already exists in the group, or
 // ErrItemAlreadyExists when the item_id is already present.
 func (q *Queries) InsertItemChecked(ctx context.Context, arg InsertItemParams) error {
 	rows, err := q.InsertItem(ctx, arg)
@@ -42,6 +51,9 @@ func (q *Queries) InsertItemChecked(ctx context.Context, arg InsertItemParams) e
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			if pgErr.ConstraintName == constraintTypeChecksum {
 				return ErrDuplicateChecksum
+			}
+			if pgErr.ConstraintName == constraintGroupVariant {
+				return ErrDuplicateVariant
 			}
 			return ErrItemAlreadyExists
 		}

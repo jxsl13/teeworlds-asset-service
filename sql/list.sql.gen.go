@@ -8,25 +8,45 @@ package sql
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 const listItems = `-- name: ListItems :many
 SELECT
-    si.item_id,
-    si.item_type,
-    si.item_value,
+    ag.group_id,
+    ag.asset_type,
+    ag.group_name,
+    ag.group_key,
+    CAST(COALESCE(
+        (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
+         FROM search_value sv
+         WHERE sv.group_id = ag.group_id AND sv.key_name = 'creators'),
+        ''
+    ) AS TEXT) AS creators,
+    CAST(COALESCE(
+        (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
+         FROM asset_item ai
+         WHERE ai.group_id = ag.group_id),
+        ''
+    ) AS TEXT) AS variants,
+    COALESCE(
+        (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+        0
+    )::BIGINT AS total_size,
+    COALESCE(
+        (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+        '1970-01-01'::timestamptz
+    )::timestamptz AS created_at,
     COUNT(*) OVER () AS total_count
-FROM search_item si
-LEFT JOIN search_item_metadata sim ON si.item_id = sim.item_id
-WHERE si.item_type = $1
+FROM asset_group ag
+WHERE ag.asset_type = $1
   AND (
       $4::text IS NULL
       OR EXISTS (
           SELECT 1 FROM search_value sv
-          WHERE sv.item_id = si.item_id
+          WHERE sv.group_id = ag.group_id
             AND sv.key_name = 'name'
             AND sv.key_value ILIKE '%' || $4::text || '%'
       )
@@ -35,7 +55,7 @@ WHERE si.item_type = $1
       $5::text IS NULL
       OR EXISTS (
           SELECT 1 FROM search_value sv
-          WHERE sv.item_id = si.item_id
+          WHERE sv.group_id = ag.group_id
             AND sv.key_name = 'creator'
             AND sv.key_value ILIKE '%' || $5::text || '%'
       )
@@ -44,7 +64,7 @@ WHERE si.item_type = $1
       $6::text IS NULL
       OR EXISTS (
           SELECT 1 FROM search_value sv
-          WHERE sv.item_id = si.item_id
+          WHERE sv.group_id = ag.group_id
             AND sv.key_name = 'license'
             AND sv.key_value = $6::text
       )
@@ -52,24 +72,82 @@ WHERE si.item_type = $1
 ORDER BY
   CASE WHEN NOT $7::bool THEN
     CASE $8::text
-      WHEN 'name'       THEN si.item_value->>'name'
-      WHEN 'created_at' THEN to_char(COALESCE(sim.created_at, '1970-01-01'::timestamptz), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-      ELSE si.item_value->>'name'
+      WHEN 'name'       THEN ag.group_name
+      WHEN 'creators'   THEN COALESCE(
+          (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
+           FROM search_value sv
+           WHERE sv.group_id = ag.group_id AND sv.key_name = 'creators'),
+          '')
+      WHEN 'size'       THEN lpad(cast(COALESCE(
+          (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+          0) as text), 20, '0')
+      WHEN 'created_at' THEN to_char(COALESCE(
+          (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+      ELSE ag.group_name
     END
   END ASC,
   CASE WHEN $7::bool THEN
     CASE $8::text
-      WHEN 'name'       THEN si.item_value->>'name'
-      WHEN 'created_at' THEN to_char(COALESCE(sim.created_at, '1970-01-01'::timestamptz), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-      ELSE si.item_value->>'name'
+      WHEN 'name'       THEN ag.group_name
+      WHEN 'creators'   THEN COALESCE(
+          (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
+           FROM search_value sv
+           WHERE sv.group_id = ag.group_id AND sv.key_name = 'creators'),
+          '')
+      WHEN 'size'       THEN lpad(cast(COALESCE(
+          (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+          0) as text), 20, '0')
+      WHEN 'created_at' THEN to_char(COALESCE(
+          (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+      ELSE ag.group_name
     END
   END DESC,
-  si.item_id ASC
+  CASE WHEN $9::text <> '' AND NOT $10::bool THEN
+    CASE $9::text
+      WHEN 'name'       THEN ag.group_name
+      WHEN 'creators'   THEN COALESCE(
+          (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
+           FROM search_value sv
+           WHERE sv.group_id = ag.group_id AND sv.key_name = 'creators'),
+          '')
+      WHEN 'size'       THEN lpad(cast(COALESCE(
+          (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+          0) as text), 20, '0')
+      WHEN 'created_at' THEN to_char(COALESCE(
+          (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+      ELSE NULL
+    END
+  END ASC,
+  CASE WHEN $9::text <> '' AND $10::bool THEN
+    CASE $9::text
+      WHEN 'name'       THEN ag.group_name
+      WHEN 'creators'   THEN COALESCE(
+          (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
+           FROM search_value sv
+           WHERE sv.group_id = ag.group_id AND sv.key_name = 'creators'),
+          '')
+      WHEN 'size'       THEN lpad(cast(COALESCE(
+          (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+          0) as text), 20, '0')
+      WHEN 'created_at' THEN to_char(COALESCE(
+          (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+      ELSE NULL
+    END
+  END DESC,
+  ag.group_id ASC
 LIMIT $2 OFFSET $3
 `
 
 type ListItemsParams struct {
-	ItemType      ItemTypeEnum   `db:"item_type"`
+	AssetType     AssetTypeEnum  `db:"asset_type"`
 	Limit         int32          `db:"limit"`
 	Offset        int32          `db:"offset"`
 	FilterName    sql.NullString `db:"filter_name"`
@@ -77,18 +155,25 @@ type ListItemsParams struct {
 	FilterLicense sql.NullString `db:"filter_license"`
 	SortDesc      bool           `db:"sort_desc"`
 	SortField     string         `db:"sort_field"`
+	SortField2    string         `db:"sort_field_2"`
+	SortDesc2     bool           `db:"sort_desc_2"`
 }
 
 type ListItemsRow struct {
-	ItemID     uuid.UUID       `db:"item_id"`
-	ItemType   ItemTypeEnum    `db:"item_type"`
-	ItemValue  json.RawMessage `db:"item_value"`
-	TotalCount int64           `db:"total_count"`
+	GroupID    uuid.UUID     `db:"group_id"`
+	AssetType  AssetTypeEnum `db:"asset_type"`
+	GroupName  string        `db:"group_name"`
+	GroupKey   string        `db:"group_key"`
+	Creators   string        `db:"creators"`
+	Variants   string        `db:"variants"`
+	TotalSize  int64         `db:"total_size"`
+	CreatedAt  time.Time     `db:"created_at"`
+	TotalCount int64         `db:"total_count"`
 }
 
 func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListItemsRow, error) {
 	rows, err := q.query(ctx, q.listItemsStmt, listItems,
-		arg.ItemType,
+		arg.AssetType,
 		arg.Limit,
 		arg.Offset,
 		arg.FilterName,
@@ -96,6 +181,8 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 		arg.FilterLicense,
 		arg.SortDesc,
 		arg.SortField,
+		arg.SortField2,
+		arg.SortDesc2,
 	)
 	if err != nil {
 		return nil, err
@@ -105,9 +192,14 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 	for rows.Next() {
 		var i ListItemsRow
 		if err := rows.Scan(
-			&i.ItemID,
-			&i.ItemType,
-			&i.ItemValue,
+			&i.GroupID,
+			&i.AssetType,
+			&i.GroupName,
+			&i.GroupKey,
+			&i.Creators,
+			&i.Variants,
+			&i.TotalSize,
+			&i.CreatedAt,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err

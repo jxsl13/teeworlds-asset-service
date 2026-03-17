@@ -19,14 +19,26 @@ import (
 // ExtractMapImages implements api.StrictServerInterface.
 func (s *Server) ExtractMapImages(ctx context.Context, request api.ExtractMapImagesRequestObject) (api.ExtractMapImagesResponseObject, error) {
 	row, err := s.dao.GetItemFilePath(ctx, sqlc.GetItemFilePathParams{
-		ItemID:   request.ItemId,
-		ItemType: sqlc.ItemTypeEnumMap,
+		ItemID:    request.ItemId,
+		AssetType: sqlc.AssetTypeEnumMap,
 	})
-	if err != nil {
-		if errors.Is(err, stdsql.ErrNoRows) {
-			return api.ExtractMapImages404JSONResponse{Error: "map not found"}, nil
-		}
+	if err != nil && !errors.Is(err, stdsql.ErrNoRows) {
 		return nil, fmt.Errorf("get map file path: %w", err)
+	}
+
+	// Fallback: treat the ID as a group_id.
+	if errors.Is(err, stdsql.ErrNoRows) {
+		groupRow, groupErr := s.dao.GetGroupFilePath(ctx, sqlc.GetGroupFilePathParams{
+			GroupID:   request.ItemId,
+			AssetType: sqlc.AssetTypeEnumMap,
+		})
+		if groupErr != nil {
+			if errors.Is(groupErr, stdsql.ErrNoRows) {
+				return api.ExtractMapImages404JSONResponse{Error: "map not found"}, nil
+			}
+			return nil, fmt.Errorf("get group file path: %w", groupErr)
+		}
+		row.ItemFilePath = groupRow.ItemFilePath
 	}
 
 	f, err := s.fsys.Open(filepath.FromSlash(row.ItemFilePath))

@@ -35,11 +35,14 @@ func (s *SearchService) Search(ctx context.Context, query model.SearchQuery) (mo
 }
 
 func (s *SearchService) searchByType(ctx context.Context, query model.SearchQuery) (model.SearchResult, error) {
+	primary := query.PrimarySort()
 	rows, err := s.dao.SearchByType(ctx, sqlc.SearchByTypeParams{
 		StrictWordSimilarity: query.Q,
 		Limit:                int32(query.Limit),
 		Offset:               int32(query.Offset),
-		ItemType:             sqlc.ItemTypeEnum(query.ItemType),
+		AssetType:            sqlc.AssetTypeEnum(query.ItemType),
+		SortField:            primary.Field,
+		SortDesc:             primary.Desc,
 	})
 	if err != nil {
 		return model.SearchResult{}, err
@@ -49,15 +52,19 @@ func (s *SearchService) searchByType(ctx context.Context, query model.SearchQuer
 
 // ListItems executes the list items use case.
 func (s *SearchService) ListItems(ctx context.Context, query model.ListQuery) (model.ListResult, error) {
+	primary := query.PrimarySort()
+	secondary := query.SecondarySort()
 	rows, err := s.dao.ListItems(ctx, sqlc.ListItemsParams{
-		ItemType:      sqlc.ItemTypeEnum(query.ItemType),
+		AssetType:     sqlc.AssetTypeEnum(query.ItemType),
 		Limit:         int32(query.Limit),
 		Offset:        int32(query.Offset),
 		FilterName:    toNullString(query.FilterName),
 		FilterCreator: toNullString(query.FilterCreator),
 		FilterLicense: toNullString(query.FilterLicense),
-		SortField:     query.SortField,
-		SortDesc:      query.SortDesc,
+		SortField:     primary.Field,
+		SortDesc:      primary.Desc,
+		SortField2:    secondary.Field,
+		SortDesc2:     secondary.Desc,
 	})
 	if err != nil {
 		return model.ListResult{}, err

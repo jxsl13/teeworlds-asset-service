@@ -7,31 +7,44 @@ package sql
 
 import (
 	"context"
-	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 const search = `-- name: Search :many
 SELECT
-    sm.item_id,
-    si.item_type,
+    ag.group_id,
+    ag.asset_type,
+    ag.group_name,
+    ag.group_key,
+    CAST(COALESCE(
+        (SELECT string_agg(sv2.key_value, ', ' ORDER BY sv2.key_value)
+         FROM search_value sv2
+         WHERE sv2.group_id = ag.group_id AND sv2.key_name = 'creators'),
+        ''
+    ) AS TEXT) AS creators,
+    CAST(COALESCE(
+        (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
+         FROM asset_item ai
+         WHERE ai.group_id = ag.group_id),
+        ''
+    ) AS TEXT) AS variants,
     sm.sml,
-    si.item_value,
     COUNT(*) OVER () AS total_count
-FROM search_item si
+FROM asset_group ag
 JOIN (
     SELECT
-        sv.item_id,
+        sv.group_id,
         CAST(
             SUM(strict_word_similarity(sv.key_value, $1) + COALESCE(sw.weight, 0))
             AS FLOAT8
         ) AS sml
     FROM  search_value sv
     LEFT JOIN search_value_weight sw ON sv.key_name = sw.key_name
-    WHERE key_value ~* $1 -- search keywords
-    GROUP BY sv.item_id
-) AS sm ON si.item_id = sm.item_id
+    WHERE key_value ~* $1
+    GROUP BY sv.group_id
+) AS sm ON ag.group_id = sm.group_id
 ORDER BY sm.sml DESC
 LIMIT $2 OFFSET $3
 `
@@ -43,11 +56,14 @@ type SearchParams struct {
 }
 
 type SearchRow struct {
-	ItemID     uuid.UUID       `db:"item_id"`
-	ItemType   ItemTypeEnum    `db:"item_type"`
-	Sml        float64         `db:"sml"`
-	ItemValue  json.RawMessage `db:"item_value"`
-	TotalCount int64           `db:"total_count"`
+	GroupID    uuid.UUID     `db:"group_id"`
+	AssetType  AssetTypeEnum `db:"asset_type"`
+	GroupName  string        `db:"group_name"`
+	GroupKey   string        `db:"group_key"`
+	Creators   string        `db:"creators"`
+	Variants   string        `db:"variants"`
+	Sml        float64       `db:"sml"`
+	TotalCount int64         `db:"total_count"`
 }
 
 func (q *Queries) Search(ctx context.Context, arg SearchParams) ([]SearchRow, error) {
@@ -60,10 +76,13 @@ func (q *Queries) Search(ctx context.Context, arg SearchParams) ([]SearchRow, er
 	for rows.Next() {
 		var i SearchRow
 		if err := rows.Scan(
-			&i.ItemID,
-			&i.ItemType,
+			&i.GroupID,
+			&i.AssetType,
+			&i.GroupName,
+			&i.GroupKey,
+			&i.Creators,
+			&i.Variants,
 			&i.Sml,
-			&i.ItemValue,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err
@@ -81,42 +100,108 @@ func (q *Queries) Search(ctx context.Context, arg SearchParams) ([]SearchRow, er
 
 const searchByType = `-- name: SearchByType :many
 SELECT
-    sm.item_id,
-    si.item_type,
+    ag.group_id,
+    ag.asset_type,
+    ag.group_name,
+    ag.group_key,
+    CAST(COALESCE(
+        (SELECT string_agg(sv2.key_value, ', ' ORDER BY sv2.key_value)
+         FROM search_value sv2
+         WHERE sv2.group_id = ag.group_id AND sv2.key_name = 'creators'),
+        ''
+    ) AS TEXT) AS creators,
+    CAST(COALESCE(
+        (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
+         FROM asset_item ai
+         WHERE ai.group_id = ag.group_id),
+        ''
+    ) AS TEXT) AS variants,
+    COALESCE(
+        (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+        0
+    )::BIGINT AS total_size,
+    COALESCE(
+        (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+        '1970-01-01'::timestamptz
+    )::timestamptz AS created_at,
     sm.sml,
-    si.item_value,
     COUNT(*) OVER () AS total_count
-FROM search_item si
+FROM asset_group ag
 JOIN (
     SELECT
-        sv.item_id,
+        sv.group_id,
         CAST(
             SUM(strict_word_similarity(sv.key_value, $1) + COALESCE(sw.weight, 0))
             AS FLOAT8
         ) AS sml
     FROM  search_value sv
     LEFT JOIN search_value_weight sw ON sv.key_name = sw.key_name
-    WHERE key_value ~* $1 -- search keywords
-    GROUP BY sv.item_id
-) AS sm ON si.item_id = sm.item_id
-WHERE si.item_type = $4
-ORDER BY sm.sml DESC
+    WHERE key_value ~* $1
+    GROUP BY sv.group_id
+) AS sm ON ag.group_id = sm.group_id
+WHERE ag.asset_type = $4
+ORDER BY
+  CASE WHEN $5::text = '' THEN NULL END,
+  CASE WHEN $5::text <> '' AND NOT $6::bool THEN
+    CASE $5::text
+      WHEN 'name'       THEN ag.group_name
+      WHEN 'creators'   THEN COALESCE(
+          (SELECT string_agg(sv3.key_value, ', ' ORDER BY sv3.key_value)
+           FROM search_value sv3
+           WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'creators'),
+          '')
+      WHEN 'size'       THEN lpad(cast(COALESCE(
+          (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+          0) as text), 20, '0')
+      WHEN 'created_at' THEN to_char(COALESCE(
+          (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+      ELSE NULL
+    END
+  END ASC,
+  CASE WHEN $5::text <> '' AND $6::bool THEN
+    CASE $5::text
+      WHEN 'name'       THEN ag.group_name
+      WHEN 'creators'   THEN COALESCE(
+          (SELECT string_agg(sv3.key_value, ', ' ORDER BY sv3.key_value)
+           FROM search_value sv3
+           WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'creators'),
+          '')
+      WHEN 'size'       THEN lpad(cast(COALESCE(
+          (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
+          0) as text), 20, '0')
+      WHEN 'created_at' THEN to_char(COALESCE(
+          (SELECT MIN(sim.created_at) FROM asset_item ai JOIN asset_item_metadata sim ON ai.item_id = sim.item_id WHERE ai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+      ELSE NULL
+    END
+  END DESC,
+  sm.sml DESC
 LIMIT $2 OFFSET $3
 `
 
 type SearchByTypeParams struct {
-	StrictWordSimilarity string       `db:"strict_word_similarity"`
-	Limit                int32        `db:"limit"`
-	Offset               int32        `db:"offset"`
-	ItemType             ItemTypeEnum `db:"item_type"`
+	StrictWordSimilarity string        `db:"strict_word_similarity"`
+	Limit                int32         `db:"limit"`
+	Offset               int32         `db:"offset"`
+	AssetType            AssetTypeEnum `db:"asset_type"`
+	SortField            string        `db:"sort_field"`
+	SortDesc             bool          `db:"sort_desc"`
 }
 
 type SearchByTypeRow struct {
-	ItemID     uuid.UUID       `db:"item_id"`
-	ItemType   ItemTypeEnum    `db:"item_type"`
-	Sml        float64         `db:"sml"`
-	ItemValue  json.RawMessage `db:"item_value"`
-	TotalCount int64           `db:"total_count"`
+	GroupID    uuid.UUID     `db:"group_id"`
+	AssetType  AssetTypeEnum `db:"asset_type"`
+	GroupName  string        `db:"group_name"`
+	GroupKey   string        `db:"group_key"`
+	Creators   string        `db:"creators"`
+	Variants   string        `db:"variants"`
+	TotalSize  int64         `db:"total_size"`
+	CreatedAt  time.Time     `db:"created_at"`
+	Sml        float64       `db:"sml"`
+	TotalCount int64         `db:"total_count"`
 }
 
 func (q *Queries) SearchByType(ctx context.Context, arg SearchByTypeParams) ([]SearchByTypeRow, error) {
@@ -124,7 +209,9 @@ func (q *Queries) SearchByType(ctx context.Context, arg SearchByTypeParams) ([]S
 		arg.StrictWordSimilarity,
 		arg.Limit,
 		arg.Offset,
-		arg.ItemType,
+		arg.AssetType,
+		arg.SortField,
+		arg.SortDesc,
 	)
 	if err != nil {
 		return nil, err
@@ -134,10 +221,15 @@ func (q *Queries) SearchByType(ctx context.Context, arg SearchByTypeParams) ([]S
 	for rows.Next() {
 		var i SearchByTypeRow
 		if err := rows.Scan(
-			&i.ItemID,
-			&i.ItemType,
+			&i.GroupID,
+			&i.AssetType,
+			&i.GroupName,
+			&i.GroupKey,
+			&i.Creators,
+			&i.Variants,
+			&i.TotalSize,
+			&i.CreatedAt,
 			&i.Sml,
-			&i.ItemValue,
 			&i.TotalCount,
 		); err != nil {
 			return nil, err

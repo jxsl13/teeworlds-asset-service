@@ -162,8 +162,8 @@ type ItemType string
 
 // ItemTypesResponse defines model for ItemTypesResponse.
 type ItemTypesResponse struct {
-	// ItemTypes All available item types.
-	ItemTypes []ItemType `json:"item_types"`
+	// AssetTypes All available item types.
+	AssetTypes []ItemType `json:"asset_types"`
 }
 
 // License Content license. Supported values:
@@ -183,9 +183,10 @@ type License string
 
 // ListItem defines model for ListItem.
 type ListItem struct {
+	AssetType ItemType `json:"asset_type"`
+
 	// ItemId Unique identifier of the item.
-	ItemId   openapi_types.UUID `json:"item_id"`
-	ItemType ItemType           `json:"item_type"`
+	ItemId openapi_types.UUID `json:"item_id"`
 
 	// ItemValue Arbitrary JSON payload of the item.
 	ItemValue map[string]interface{} `json:"item_value"`
@@ -209,9 +210,10 @@ type SearchResponse struct {
 
 // SearchResult defines model for SearchResult.
 type SearchResult struct {
+	AssetType ItemType `json:"asset_type"`
+
 	// ItemId Unique identifier of the item.
-	ItemId   openapi_types.UUID `json:"item_id"`
-	ItemType ItemType           `json:"item_type"`
+	ItemId openapi_types.UUID `json:"item_id"`
 
 	// ItemValue Arbitrary JSON payload of the item.
 	ItemValue map[string]interface{} `json:"item_value"`
@@ -286,6 +288,12 @@ type ListItemsParams struct {
 	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// DownloadThumbnailParams defines parameters for DownloadThumbnail.
+type DownloadThumbnailParams struct {
+	// IfNoneMatch ETag value from a previous response. If the thumbnail has not changed, the server responds with 304 Not Modified.
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
 // RenderItemListParams defines parameters for RenderItemList.
 type RenderItemListParams struct {
 	// Q Optional fuzzy search query.
@@ -296,6 +304,9 @@ type RenderItemListParams struct {
 
 	// Offset Pagination offset (default 0).
 	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Sort Comma-separated list of sort directives, each in the form "field:asc" or "field:desc". Supported fields are name and created_at. Example: "name:asc,created_at:desc".
+	Sort *string `form:"sort,omitempty" json:"sort,omitempty"`
 }
 
 // UploadItemMultipartRequestBody defines body for UploadItem for multipart/form-data ContentType.

@@ -17,8 +17,6 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgerrcode"
 	"github.com/jxsl13/asset-service/http/api"
 	"github.com/jxsl13/asset-service/internal/twmap"
 	"github.com/jxsl13/asset-service/internal/twskin"
@@ -27,13 +25,15 @@ import (
 	"golang.org/x/image/draw"
 )
 
-var errStorageLimitExceeded = errors.New("storage limit exceeded")
-
 // uploadContext bundles every piece of state accumulated during a single upload.
 type uploadContext struct {
 	itemID   uuid.UUID
+	groupID  uuid.UUID
 	itemType api.ItemType
 	meta     api.ItemMetadata
+
+	groupKey   string // e.g. "resolution"
+	groupValue string // e.g. "256x128"
 
 	ext              string // file extension including dot
 	originalFilename string // original filename from the upload
@@ -56,6 +56,8 @@ func (u *uploadContext) tmpName() string {
 }
 
 // UploadItem implements api.StrictServerInterface.
+// It dispatches to a per-asset-type upload function so that each type's
+// grouping, validation and thumbnail logic is explicit and self-contained.
 func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestObject) (api.UploadItemResponseObject, error) {
 	meta, err := s.parseMetadata(request)
 	if err != nil {
@@ -72,21 +74,25 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		return nil, fmt.Errorf("generate item ID: %w", err)
 	}
 
+	groupID, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("generate group ID: %w", err)
+	}
+
 	uc := &uploadContext{
 		itemID:           itemID,
-		itemType:         request.ItemType,
+		groupID:          groupID,
+		itemType:         request.AssetType,
 		meta:             meta,
-		ext:              fileExtension(request.ItemType),
+		ext:              fileExtension(request.AssetType),
 		originalFilename: filename,
 	}
 
-	// ── Stream, validate, generate thumbnail ─────────────────────────────────
+	// ── Stream file into temp storage ────────────────────────────────────────
 	if resp, err := s.receiveFile(uc, filePart); resp != nil || err != nil {
 		return resp, err
 	}
 
-	// From this point on, temp files exist. Ensure they are cleaned up on any
-	// failure path; disarm after the final move to permanent storage succeeds.
 	committed := false
 	defer func() {
 		if !committed {
@@ -94,18 +100,45 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		}
 	}()
 
-	if resp, err := s.validateUpload(uc); resp != nil || err != nil {
-		return resp, err
-	}
-	s.buildStoragePaths(uc)
-	if resp, err := s.prepareThumbnail(uc); resp != nil || err != nil {
-		return resp, err
+	// ── Dispatch to per-asset-type handler ───────────────────────────────────
+	switch request.AssetType {
+	case api.Map:
+		if resp, err := s.uploadMap(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	case api.Skin:
+		if resp, err := s.uploadSkin(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	case api.Gameskin:
+		if resp, err := s.uploadGameskin(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	case api.Hud:
+		if resp, err := s.uploadHud(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	case api.Entity:
+		if resp, err := s.uploadEntity(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	case api.Theme:
+		if resp, err := s.uploadTheme(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	case api.Template:
+		if resp, err := s.uploadTemplate(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	case api.Emoticon:
+		if resp, err := s.uploadEmoticon(ctx, uc); resp != nil || err != nil {
+			return resp, err
+		}
+	default:
+		return api.UploadItem400JSONResponse{Error: fmt.Sprintf("unknown asset type %q", request.AssetType)}, nil
 	}
 
-	// ── Persist & finalise ───────────────────────────────────────────────────
-	if resp, err := s.persistUpload(ctx, uc); resp != nil || err != nil {
-		return resp, err
-	}
+	// ── Move to permanent storage ────────────────────────────────────────────
 	if err := s.moveToStorage(uc); err != nil {
 		return nil, err
 	}
@@ -116,15 +149,28 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 
 // ── upload pipeline steps ─────────────────────────────────────────────────────
 
+// maxMetadataSize is the maximum allowed size for the JSON metadata part (32 KiB).
+const maxMetadataSize = 32 << 10
+
 // parseMetadata reads and decodes the metadata part of the multipart request.
+// The JSON body is limited to maxMetadataSize bytes.
 func (s *Server) parseMetadata(request api.UploadItemRequestObject) (api.ItemMetadata, error) {
 	metaPart, err := request.Body.NextPart()
 	if err != nil || metaPart.FormName() != "metadata" {
 		return api.ItemMetadata{}, fmt.Errorf("first multipart part must be named \"metadata\"")
 	}
 
+	limited := io.LimitReader(metaPart, maxMetadataSize+1)
+	raw, err := io.ReadAll(limited)
+	if err != nil {
+		return api.ItemMetadata{}, fmt.Errorf("reading metadata: %s", err)
+	}
+	if len(raw) > maxMetadataSize {
+		return api.ItemMetadata{}, fmt.Errorf("metadata too large (max %d bytes)", maxMetadataSize)
+	}
+
 	var meta api.ItemMetadata
-	if err := json.NewDecoder(metaPart).Decode(&meta); err != nil {
+	if err := json.Unmarshal(raw, &meta); err != nil {
 		return api.ItemMetadata{}, fmt.Errorf("invalid metadata JSON: %s", err)
 	}
 	return meta, nil
@@ -172,17 +218,34 @@ func (s *Server) receiveFile(uc *uploadContext, filePart io.Reader) (api.UploadI
 	return nil, nil
 }
 
-// validateUpload checks the file format and resolution.
-func (s *Server) validateUpload(uc *uploadContext) (api.UploadItemResponseObject, error) {
-	if errResp := s.validator.ValidateFile(uc.itemType, s.tmpDir, uc.tmpName()); errResp != nil {
+// validateAndSetResolution validates a PNG file, checks the resolution is allowed,
+// and sets the group key/value on uc. Returns a 400 response if validation fails.
+func (s *Server) validateAndSetResolution(uc *uploadContext) (api.UploadItemResponseObject, error) {
+	errResp, resolution := s.validator.ValidateFile(uc.itemType, s.tmpDir, uc.tmpName())
+	if errResp != nil {
+		return api.UploadItem400JSONResponse{Error: errResp.Error}, nil
+	}
+	if resolution == "" {
+		return api.UploadItem400JSONResponse{Error: "could not detect image resolution"}, nil
+	}
+	uc.groupKey = "resolution"
+	uc.groupValue = resolution
+	return nil, nil
+}
+
+// validateMap validates a .map file. Maps have no resolution grouping.
+func (s *Server) validateMap(uc *uploadContext) (api.UploadItemResponseObject, error) {
+	errResp, _ := s.validator.ValidateFile(uc.itemType, s.tmpDir, uc.tmpName())
+	if errResp != nil {
 		return api.UploadItem400JSONResponse{Error: errResp.Error}, nil
 	}
 	return nil, nil
 }
 
 // buildStoragePaths computes the permanent relative and absolute file paths.
+// Files are stored under /<asset_type>/<group_id>/<item_id>.<ext>.
 func (s *Server) buildStoragePaths(uc *uploadContext) {
-	uc.relPath = fmt.Sprintf("/%s/%s%s", uc.itemType, uc.itemID, uc.ext)
+	uc.relPath = fmt.Sprintf("/%s/%s/%s%s", uc.itemType, uc.groupID, uc.itemID, uc.ext)
 	uc.absPath = filepath.Join(string(s.fsys), filepath.FromSlash(uc.relPath))
 }
 
@@ -191,7 +254,7 @@ func (s *Server) buildStoragePaths(uc *uploadContext) {
 // Thumbnail path semantics:
 //
 //   - Maps are not images themselves, so a thumbnail is always rendered into a
-//     separate file under /<item_type>/thumbnails/<uuid>.png. The DB column
+//     separate file under /<asset_type>/thumbnails/<uuid>.png. The DB column
 //     item_thumbnail_path points to that dedicated file.
 //
 //   - Image-based types (skins, gameskins, …) that exceed the configured
@@ -201,7 +264,7 @@ func (s *Server) buildStoragePaths(uc *uploadContext) {
 //     thumbnail file. Their item_thumbnail_path points back to the original
 //     item file (relPath), so the thumbnail endpoint serves the source directly.
 func (s *Server) prepareThumbnail(uc *uploadContext) (api.UploadItemResponseObject, error) {
-	thumbPath, err := s.generateThumbnail(uc.itemType, uc.itemID, s.tmpDir, uc.tmpName())
+	thumbPath, err := s.generateThumbnail(uc.itemType, uc.itemID, uc.groupID, s.tmpDir, uc.tmpName())
 	if err != nil {
 		return nil, fmt.Errorf("generate thumbnail: %w", err)
 	}
@@ -218,37 +281,60 @@ func (s *Server) prepareThumbnail(uc *uploadContext) (api.UploadItemResponseObje
 	return nil, nil
 }
 
-// persistUpload inserts the item, metadata & search values inside a transaction.
+// persistUpload upserts the group, inserts the item variant, metadata & search values inside a transaction.
+// It resolves the canonical groupID, builds storage paths and generates thumbnails before the DB insert.
 func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.UploadItemResponseObject, error) {
-	itemValue, err := json.Marshal(uc.meta)
-	if err != nil {
-		return nil, fmt.Errorf("marshal metadata: %w", err)
-	}
-
 	txErr := s.dao.Tx(ctx, func(tx sqlc.DAO) error {
-		inserted, err := tx.InsertItem(ctx, sqlc.InsertItemParams{
+		// Upsert the group (creates if new, no-ops if name+key already exists).
+		if err := tx.UpsertGroup(ctx, sqlc.UpsertGroupParams{
+			GroupID:   uc.groupID,
+			AssetType: sqlc.AssetTypeEnum(uc.itemType),
+			GroupName: uc.meta.Name,
+			GroupKey:  uc.groupKey,
+		}); err != nil {
+			return err
+		}
+
+		// If the group already existed, fetch the canonical group_id.
+		existingGroupID, err := tx.GetGroupID(ctx, sqlc.GetGroupIDParams{
+			AssetType: sqlc.AssetTypeEnum(uc.itemType),
+			GroupName: uc.meta.Name,
+			GroupKey:  uc.groupKey,
+		})
+		if err != nil {
+			return fmt.Errorf("get group ID: %w", err)
+		}
+		uc.groupID = existingGroupID
+
+		// Now that we know the real groupID, compute storage paths and thumbnail.
+		s.buildStoragePaths(uc)
+		if resp, err := s.prepareThumbnail(uc); resp != nil || err != nil {
+			if resp != nil {
+				// This shouldn't happen here, but handle gracefully.
+				return fmt.Errorf("thumbnail: %s", resp)
+			}
+			return err
+		}
+
+		if err := tx.InsertItemChecked(ctx, sqlc.InsertItemParams{
 			ItemID:            uc.itemID,
-			ItemType:          sqlc.ItemTypeEnum(uc.itemType),
+			GroupID:           uc.groupID,
+			GroupValue:        uc.groupValue,
 			Size:              uc.size,
 			Checksum:          uc.checksum,
 			ItemFilePath:      uc.relPath,
 			ItemThumbnailPath: uc.thumbnailPath,
-			ItemValue:         itemValue,
 			OriginalFilename:  uc.originalFilename,
 			MaxTotalSize:      s.maxStorageSize,
-		})
-		if err != nil {
+		}); err != nil {
 			return err
-		}
-		if inserted == 0 {
-			return errStorageLimitExceeded
 		}
 
 		if err := tx.InsertItemMetadata(ctx, buildMetadataParams(ctx, uc.itemID)); err != nil {
 			return err
 		}
 
-		for _, sv := range metaToSearchValues(uc.itemID, uc.meta) {
+		for _, sv := range metaToSearchValues(uc.groupID, uc.meta) {
 			if err := tx.InsertSearchValue(ctx, sv); err != nil {
 				return err
 			}
@@ -257,7 +343,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 	})
 
 	if txErr != nil {
-		return classifyTxError(txErr)
+		return s.classifyUploadError(ctx, txErr, uc.checksum)
 	}
 	return nil, nil
 }
@@ -282,8 +368,8 @@ func (s *Server) moveToStorage(uc *uploadContext) error {
 // generateThumbnail creates a PNG thumbnail for the uploaded item.
 // Returns a valid NullString with the thumbnail's relative storage path when a
 // separate file was written, or an invalid NullString when no file was created.
-func (s *Server) generateThumbnail(itemType api.ItemType, itemID uuid.UUID, tmpDir *os.Root, tmpName string) (stdsql.NullString, error) {
-	thumbRelPath := fmt.Sprintf("/%s/thumbnails/%s.png", itemType, itemID)
+func (s *Server) generateThumbnail(itemType api.ItemType, itemID, groupID uuid.UUID, tmpDir *os.Root, tmpName string) (stdsql.NullString, error) {
+	thumbRelPath := fmt.Sprintf("/%s/%s/thumbnails/%s.png", itemType, groupID, itemID)
 	size, ok := s.thumbnailSizes[string(itemType)]
 	if !ok {
 		return stdsql.NullString{}, nil // no thumbnail config for this type
@@ -403,15 +489,35 @@ func moveFile(tmpDir *os.Root, tmpName, absPath string) error {
 	return os.Rename(filepath.Join(tmpDir.Name(), tmpName), absPath)
 }
 
-// classifyTxError maps known DB errors to the appropriate HTTP response.
-// Returns (response, nil) for expected DB errors (409, 507) and (nil, error)
-// for truly unexpected failures.
-func classifyTxError(txErr error) (api.UploadItemResponseObject, error) {
-	var pgErr *pgconn.PgError
-	if errors.As(txErr, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-		return api.UploadItem409JSONResponse{Error: "item or checksum already exists"}, nil
+// classifyUploadError maps known DB/domain errors to the appropriate HTTP response.
+// On duplicate checksum, it looks up the existing item to provide a helpful message.
+func (s *Server) classifyUploadError(ctx context.Context, txErr error, checksum string) (api.UploadItemResponseObject, error) {
+	if errors.Is(txErr, sqlc.ErrDuplicateChecksum) {
+		existing, err := s.dao.GetItemByChecksum(ctx, checksum)
+		if err != nil {
+			return api.UploadItem409JSONResponse{
+				Error: "an identical file already exists (could not look up details)",
+			}, nil
+		}
+		msg := fmt.Sprintf(
+			"this file already exists as %s \"%s\"",
+			existing.AssetType, existing.GroupName,
+		)
+		if existing.GroupValue != "" {
+			msg = fmt.Sprintf(
+				"this file already exists as %s \"%s\" (%s)",
+				existing.AssetType, existing.GroupName, existing.GroupValue,
+			)
+		}
+		return api.UploadItem409JSONResponse{Error: msg}, nil
 	}
-	if errors.Is(txErr, errStorageLimitExceeded) {
+	if errors.Is(txErr, sqlc.ErrDuplicateVariant) {
+		return api.UploadItem409JSONResponse{Error: "this resolution variant already exists in the group"}, nil
+	}
+	if errors.Is(txErr, sqlc.ErrItemAlreadyExists) {
+		return api.UploadItem409JSONResponse{Error: "item already exists"}, nil
+	}
+	if errors.Is(txErr, sqlc.ErrStorageLimitExceeded) {
 		return api.UploadItem507JSONResponse{Error: "storage limit exceeded"}, nil
 	}
 	return nil, fmt.Errorf("persist upload: %w", txErr)
@@ -447,14 +553,14 @@ func hashAndWrite(src io.Reader, dst io.Writer) (int64, string, error) {
 }
 
 // metaToSearchValues converts ItemMetadata into individual search_value rows.
-func metaToSearchValues(id uuid.UUID, meta api.ItemMetadata) []sqlc.InsertSearchValueParams {
+func metaToSearchValues(groupID uuid.UUID, meta api.ItemMetadata) []sqlc.InsertSearchValueParams {
 	rows := []sqlc.InsertSearchValueParams{
-		{ItemID: id, KeyName: "name", KeyValue: meta.Name},
-		{ItemID: id, KeyName: "license", KeyValue: string(meta.License)},
+		{GroupID: groupID, KeyName: "name", KeyValue: meta.Name},
+		{GroupID: groupID, KeyName: "license", KeyValue: string(meta.License)},
 	}
 	for _, c := range meta.Creators {
 		rows = append(rows, sqlc.InsertSearchValueParams{
-			ItemID:   id,
+			GroupID:  groupID,
 			KeyName:  "creators",
 			KeyValue: c,
 		})

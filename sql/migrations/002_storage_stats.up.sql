@@ -7,7 +7,7 @@ CREATE TABLE storage_stats (
 
 INSERT INTO storage_stats DEFAULT VALUES;
 
--- Maintain total_size whenever search_item rows are inserted, updated or deleted.
+-- Maintain total_size whenever asset_item rows are inserted, updated or deleted.
 CREATE OR REPLACE FUNCTION storage_stats_update()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -22,6 +22,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER search_item_storage_stats
-    AFTER INSERT OR UPDATE OF size OR DELETE ON search_item
+CREATE TRIGGER asset_item_storage_stats
+    AFTER INSERT OR UPDATE OF size OR DELETE ON asset_item
     FOR EACH ROW EXECUTE FUNCTION storage_stats_update();

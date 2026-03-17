@@ -3,6 +3,8 @@ package sql
 import (
 	"context"
 	stdsql "database/sql"
+
+	"github.com/google/uuid"
 )
 
 // DAO is the data-access interface used by the service layer.
@@ -12,8 +14,15 @@ type DAO interface {
 	SearchByType(ctx context.Context, arg SearchByTypeParams) ([]SearchByTypeRow, error)
 	ListItems(ctx context.Context, arg ListItemsParams) ([]ListItemsRow, error)
 	GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (GetItemFilePathRow, error)
+	GetGroupFilePath(ctx context.Context, arg GetGroupFilePathParams) (GetGroupFilePathRow, error)
 	GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (stdsql.NullString, error)
+	GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (stdsql.NullString, error)
+	GetItemByChecksum(ctx context.Context, checksum string) (GetItemByChecksumRow, error)
+	GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([]GetGroupFilesRow, error)
+	UpsertGroup(ctx context.Context, arg UpsertGroupParams) error
+	GetGroupID(ctx context.Context, arg GetGroupIDParams) (uuid.UUID, error)
 	InsertItem(ctx context.Context, arg InsertItemParams) (int64, error)
+	InsertItemChecked(ctx context.Context, arg InsertItemParams) error
 	InsertItemMetadata(ctx context.Context, arg InsertItemMetadataParams) error
 	InsertSearchValue(ctx context.Context, arg InsertSearchValueParams) error
 	// Tx runs fn inside a single database transaction.
@@ -47,12 +56,40 @@ func (d *dao) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (G
 	return d.q.GetItemFilePath(ctx, arg)
 }
 
+func (d *dao) GetGroupFilePath(ctx context.Context, arg GetGroupFilePathParams) (GetGroupFilePathRow, error) {
+	return d.q.GetGroupFilePath(ctx, arg)
+}
+
 func (d *dao) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (stdsql.NullString, error) {
 	return d.q.GetItemThumbnailPath(ctx, arg)
 }
 
+func (d *dao) GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (stdsql.NullString, error) {
+	return d.q.GetGroupThumbnailPath(ctx, groupID)
+}
+
+func (d *dao) GetItemByChecksum(ctx context.Context, checksum string) (GetItemByChecksumRow, error) {
+	return d.q.GetItemByChecksum(ctx, checksum)
+}
+
+func (d *dao) GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([]GetGroupFilesRow, error) {
+	return d.q.GetGroupFiles(ctx, arg)
+}
+
+func (d *dao) UpsertGroup(ctx context.Context, arg UpsertGroupParams) error {
+	return d.q.UpsertGroup(ctx, arg)
+}
+
+func (d *dao) GetGroupID(ctx context.Context, arg GetGroupIDParams) (uuid.UUID, error) {
+	return d.q.GetGroupID(ctx, arg)
+}
+
 func (d *dao) InsertItem(ctx context.Context, arg InsertItemParams) (int64, error) {
 	return d.q.InsertItem(ctx, arg)
+}
+
+func (d *dao) InsertItemChecked(ctx context.Context, arg InsertItemParams) error {
+	return d.q.InsertItemChecked(ctx, arg)
 }
 
 func (d *dao) InsertItemMetadata(ctx context.Context, arg InsertItemMetadataParams) error {

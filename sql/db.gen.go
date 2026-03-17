@@ -24,6 +24,21 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.getGroupFilePathStmt, err = db.PrepareContext(ctx, getGroupFilePath); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupFilePath: %w", err)
+	}
+	if q.getGroupFilesStmt, err = db.PrepareContext(ctx, getGroupFiles); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupFiles: %w", err)
+	}
+	if q.getGroupIDStmt, err = db.PrepareContext(ctx, getGroupID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupID: %w", err)
+	}
+	if q.getGroupThumbnailPathStmt, err = db.PrepareContext(ctx, getGroupThumbnailPath); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupThumbnailPath: %w", err)
+	}
+	if q.getItemByChecksumStmt, err = db.PrepareContext(ctx, getItemByChecksum); err != nil {
+		return nil, fmt.Errorf("error preparing query GetItemByChecksum: %w", err)
+	}
 	if q.getItemFilePathStmt, err = db.PrepareContext(ctx, getItemFilePath); err != nil {
 		return nil, fmt.Errorf("error preparing query GetItemFilePath: %w", err)
 	}
@@ -48,11 +63,39 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.searchByTypeStmt, err = db.PrepareContext(ctx, searchByType); err != nil {
 		return nil, fmt.Errorf("error preparing query SearchByType: %w", err)
 	}
+	if q.upsertGroupStmt, err = db.PrepareContext(ctx, upsertGroup); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertGroup: %w", err)
+	}
 	return &q, nil
 }
 
 func (q *Queries) Close() error {
 	var err error
+	if q.getGroupFilePathStmt != nil {
+		if cerr := q.getGroupFilePathStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupFilePathStmt: %w", cerr)
+		}
+	}
+	if q.getGroupFilesStmt != nil {
+		if cerr := q.getGroupFilesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupFilesStmt: %w", cerr)
+		}
+	}
+	if q.getGroupIDStmt != nil {
+		if cerr := q.getGroupIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupIDStmt: %w", cerr)
+		}
+	}
+	if q.getGroupThumbnailPathStmt != nil {
+		if cerr := q.getGroupThumbnailPathStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupThumbnailPathStmt: %w", cerr)
+		}
+	}
+	if q.getItemByChecksumStmt != nil {
+		if cerr := q.getItemByChecksumStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getItemByChecksumStmt: %w", cerr)
+		}
+	}
 	if q.getItemFilePathStmt != nil {
 		if cerr := q.getItemFilePathStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getItemFilePathStmt: %w", cerr)
@@ -93,6 +136,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing searchByTypeStmt: %w", cerr)
 		}
 	}
+	if q.upsertGroupStmt != nil {
+		if cerr := q.upsertGroupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertGroupStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -130,29 +178,41 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                       DBTX
-	tx                       *sql.Tx
-	getItemFilePathStmt      *sql.Stmt
-	getItemThumbnailPathStmt *sql.Stmt
-	insertItemStmt           *sql.Stmt
-	insertItemMetadataStmt   *sql.Stmt
-	insertSearchValueStmt    *sql.Stmt
-	listItemsStmt            *sql.Stmt
-	searchStmt               *sql.Stmt
-	searchByTypeStmt         *sql.Stmt
+	db                        DBTX
+	tx                        *sql.Tx
+	getGroupFilePathStmt      *sql.Stmt
+	getGroupFilesStmt         *sql.Stmt
+	getGroupIDStmt            *sql.Stmt
+	getGroupThumbnailPathStmt *sql.Stmt
+	getItemByChecksumStmt     *sql.Stmt
+	getItemFilePathStmt       *sql.Stmt
+	getItemThumbnailPathStmt  *sql.Stmt
+	insertItemStmt            *sql.Stmt
+	insertItemMetadataStmt    *sql.Stmt
+	insertSearchValueStmt     *sql.Stmt
+	listItemsStmt             *sql.Stmt
+	searchStmt                *sql.Stmt
+	searchByTypeStmt          *sql.Stmt
+	upsertGroupStmt           *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                       tx,
-		tx:                       tx,
-		getItemFilePathStmt:      q.getItemFilePathStmt,
-		getItemThumbnailPathStmt: q.getItemThumbnailPathStmt,
-		insertItemStmt:           q.insertItemStmt,
-		insertItemMetadataStmt:   q.insertItemMetadataStmt,
-		insertSearchValueStmt:    q.insertSearchValueStmt,
-		listItemsStmt:            q.listItemsStmt,
-		searchStmt:               q.searchStmt,
-		searchByTypeStmt:         q.searchByTypeStmt,
+		db:                        tx,
+		tx:                        tx,
+		getGroupFilePathStmt:      q.getGroupFilePathStmt,
+		getGroupFilesStmt:         q.getGroupFilesStmt,
+		getGroupIDStmt:            q.getGroupIDStmt,
+		getGroupThumbnailPathStmt: q.getGroupThumbnailPathStmt,
+		getItemByChecksumStmt:     q.getItemByChecksumStmt,
+		getItemFilePathStmt:       q.getItemFilePathStmt,
+		getItemThumbnailPathStmt:  q.getItemThumbnailPathStmt,
+		insertItemStmt:            q.insertItemStmt,
+		insertItemMetadataStmt:    q.insertItemMetadataStmt,
+		insertSearchValueStmt:     q.insertSearchValueStmt,
+		listItemsStmt:             q.listItemsStmt,
+		searchStmt:                q.searchStmt,
+		searchByTypeStmt:          q.searchByTypeStmt,
+		upsertGroupStmt:           q.upsertGroupStmt,
 	}
 }

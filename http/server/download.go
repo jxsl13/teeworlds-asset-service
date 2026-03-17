@@ -14,18 +14,33 @@ import (
 )
 
 // DownloadItem implements api.StrictServerInterface.
+// It first tries to find the file by item_id. If not found, it falls back
+// to treating the ID as a group_id and serves the smallest item's file.
 func (s *Server) DownloadItem(ctx context.Context, request api.DownloadItemRequestObject) (api.DownloadItemResponseObject, error) {
-	itemType := sqlc.ItemTypeEnum(request.ItemType)
+	itemType := sqlc.AssetTypeEnum(request.AssetType)
 
 	row, err := s.dao.GetItemFilePath(ctx, sqlc.GetItemFilePathParams{
-		ItemID:   request.ItemId,
-		ItemType: itemType,
+		ItemID:    request.ItemId,
+		AssetType: itemType,
 	})
-	if err != nil {
-		if errors.Is(err, stdsql.ErrNoRows) {
-			return api.DownloadItem404JSONResponse{Error: "item not found"}, nil
-		}
+	if err != nil && !errors.Is(err, stdsql.ErrNoRows) {
 		return nil, fmt.Errorf("get item file path: %w", err)
+	}
+
+	// Fallback: treat the ID as a group_id.
+	if errors.Is(err, stdsql.ErrNoRows) {
+		groupRow, groupErr := s.dao.GetGroupFilePath(ctx, sqlc.GetGroupFilePathParams{
+			GroupID:   request.ItemId,
+			AssetType: itemType,
+		})
+		if groupErr != nil {
+			if errors.Is(groupErr, stdsql.ErrNoRows) {
+				return api.DownloadItem404JSONResponse{Error: "item not found"}, nil
+			}
+			return nil, fmt.Errorf("get group file path: %w", groupErr)
+		}
+		row.ItemFilePath = groupRow.ItemFilePath
+		row.OriginalFilename = groupRow.OriginalFilename
 	}
 
 	f, err := s.fsys.Open(filepath.FromSlash(row.ItemFilePath))

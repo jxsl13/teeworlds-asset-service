@@ -1,8 +1,7 @@
 package model
 
 import (
-	"encoding/json"
-	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	oapitypes "github.com/oapi-codegen/runtime/types"
@@ -13,33 +12,39 @@ import (
 
 // Item is the domain entity returned from a search.
 type Item struct {
-	ItemID    uuid.UUID
-	ItemType  sqlc.ItemTypeEnum
+	GroupID   uuid.UUID
+	AssetType sqlc.AssetTypeEnum
+	GroupName string
+	GroupKey  string
+	Creators  string
+	Variants  string // comma-separated "uuid:value" pairs
+	TotalSize int64  // sum of all variant file sizes in bytes
+	CreatedAt time.Time
 	Score     float64
-	ItemValue json.RawMessage
 }
 
 // ItemFromRow converts a sqlc.SearchRow (DB layer) into a domain Item.
 func ItemFromRow(row sqlc.SearchRow) Item {
 	return Item{
-		ItemID:    row.ItemID,
-		ItemType:  row.ItemType,
+		GroupID:   row.GroupID,
+		AssetType: row.AssetType,
+		GroupName: row.GroupName,
+		GroupKey:  row.GroupKey,
+		Creators:  row.Creators,
+		Variants:  row.Variants,
 		Score:     row.Sml,
-		ItemValue: row.ItemValue,
 	}
 }
 
 // ToAPI converts the domain Item into an api.SearchResult DTO.
-// Returns an error when the stored JSON payload cannot be decoded.
-func (item Item) ToAPI() (api.SearchResult, error) {
-	var itemValue map[string]interface{}
-	if err := json.Unmarshal(item.ItemValue, &itemValue); err != nil {
-		return api.SearchResult{}, fmt.Errorf("decode item %s: %w", item.ItemID, err)
-	}
+func (item Item) ToAPI() api.SearchResult {
 	return api.SearchResult{
-		ItemId:    oapitypes.UUID(item.ItemID),
-		ItemType:  api.ItemType(item.ItemType),
+		ItemId:    oapitypes.UUID(item.GroupID),
+		AssetType: api.ItemType(item.AssetType),
 		Score:     item.Score,
-		ItemValue: itemValue,
-	}, nil
+		ItemValue: map[string]interface{}{
+			"name":     item.GroupName,
+			"creators": item.Creators,
+		},
+	}
 }

@@ -44,7 +44,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /{item_type}:
+  /{asset_type}:
     get:
       operationId: renderItemList
       summary: Render an HTML fragment listing items
@@ -55,7 +55,7 @@ paths:
         provided the fragment shows fuzzy-search results, otherwise a
         paginated alphabetical listing.
       parameters:
-        - name: item_type
+        - name: asset_type
           in: path
           required: true
           description: The type of item to list.
@@ -84,6 +84,15 @@ paths:
             type: integer
             minimum: 0
             default: 0
+        - name: sort
+          in: query
+          required: false
+          description: >
+            Comma-separated list of sort directives, each in the form
+            "field:asc" or "field:desc". Supported fields are name and
+            created_at. Example: "name:asc,created_at:desc".
+          schema:
+            type: string
       responses:
         "200":
           description: HTML fragment with items grid and pagination.
@@ -174,7 +183,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/search/{item_type}:
+  /api/search/{asset_type}:
     get:
       operationId: searchItemsByType
       summary: Search items scoped to a single item type
@@ -184,7 +193,7 @@ paths:
         Returns a ranked list of items of the given type whose searchable
         values match the query string via pg_trgm strict word similarity.
       parameters:
-        - name: item_type
+        - name: asset_type
           in: path
           required: true
           description: The type of item to search within.
@@ -234,7 +243,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/{item_type}:
+  /api/{asset_type}:
     get:
       operationId: listItems
       summary: List and filter items of a specific type
@@ -244,7 +253,7 @@ paths:
         Returns a paginated list of items for the given item type.
         Supports optional filtering by name, creator and license.
       parameters:
-        - name: item_type
+        - name: asset_type
           in: path
           required: true
           description: The type of item (lowercase).
@@ -317,7 +326,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/{item_type}/{item_id}/download:
+  /api/{asset_type}/{item_id}/download:
     get:
       operationId: downloadItem
       summary: Download a stored item file
@@ -327,7 +336,7 @@ paths:
         Streams the file for the given item from the configured storage path
         combined with the path stored in the database.
       parameters:
-        - name: item_type
+        - name: asset_type
           in: path
           required: true
           description: The type of item (lowercase).
@@ -361,7 +370,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/{item_type}/{item_id}/thumbnail:
+  /api/{asset_type}/{item_id}/thumbnail:
     get:
       operationId: downloadThumbnail
       summary: Download the thumbnail for an item
@@ -369,9 +378,11 @@ paths:
         - storage
       description: >
         Streams the thumbnail image for the given item. Returns 404 if the
-        item does not exist or has no thumbnail.
+        item does not exist or has no thumbnail. Thumbnails are immutable,
+        so the response includes Cache-Control and ETag headers. Clients
+        can send If-None-Match to receive 304 Not Modified.
       parameters:
-        - name: item_type
+        - name: asset_type
           in: path
           required: true
           description: The type of item (lowercase).
@@ -384,16 +395,81 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: If-None-Match
+          in: header
+          required: false
+          description: >
+            ETag value from a previous response. If the thumbnail has not
+            changed, the server responds with 304 Not Modified.
+          schema:
+            type: string
       responses:
         "200":
           description: Thumbnail image content.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "public, max-age=31536000, immutable"
+            ETag:
+              schema:
+                type: string
+                example: "\"019cf922-a443-79db-a67e-342b6edea3cf\""
           content:
             image/png:
               schema:
                 type: string
                 format: binary
+        "304":
+          description: >
+            Not Modified – the client's cached version is still current.
         "404":
           description: Item or thumbnail not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/{asset_type}/{item_id}/bundle:
+    get:
+      operationId: downloadBundle
+      summary: Download all variants of a group as a ZIP archive
+      tags:
+        - storage
+      description: >
+        Streams a ZIP archive containing all variant files of the group
+        identified by item_id (treated as a group_id). The internal folder
+        structure is /<group_value>/<original_filename>.
+      parameters:
+        - name: asset_type
+          in: path
+          required: true
+          description: The type of item (lowercase).
+          schema:
+            $ref: "#/components/schemas/ItemType"
+        - name: item_id
+          in: path
+          required: true
+          description: Group identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ZIP archive containing all variant files.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Group not found or has no items.
           content:
             application/json:
               schema:
@@ -443,7 +519,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/upload/{item_type}:
+  /api/upload/{asset_type}:
     post:
       operationId: uploadItem
       summary: Upload a new item with metadata
@@ -454,7 +530,7 @@ paths:
         "metadata" (application/json) and the second part must be named "file"
         (the raw file bytes). Returns the assigned item_id on success.
       parameters:
-        - name: item_type
+        - name: asset_type
           in: path
           required: true
           description: The type of item (lowercase).
@@ -576,13 +652,13 @@ components:
 
     SearchResult:
       type: object
-      required: [item_id, item_type, score, item_value]
+      required: [item_id, asset_type, score, item_value]
       properties:
         item_id:
           type: string
           format: uuid
           description: Unique identifier of the item.
-        item_type:
+        asset_type:
           $ref: "#/components/schemas/ItemType"
         score:
           type: number
@@ -615,9 +691,9 @@ components:
 
     ItemTypesResponse:
       type: object
-      required: [item_types]
+      required: [asset_types]
       properties:
-        item_types:
+        asset_types:
           type: array
           items:
             $ref: "#/components/schemas/ItemType"
@@ -637,13 +713,13 @@ components:
 
     ListItem:
       type: object
-      required: [item_id, item_type, item_value]
+      required: [item_id, asset_type, item_value]
       properties:
         item_id:
           type: string
           format: uuid
           description: Unique identifier of the item.
-        item_type:
+        asset_type:
           $ref: "#/components/schemas/ItemType"
         item_value:
           type: object

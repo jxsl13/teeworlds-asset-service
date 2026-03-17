@@ -8,6 +8,15 @@ type SearchQuery struct {
 	ItemType string // empty = all types
 	Limit    int
 	Offset   int
+	Sort     []SortDirective
+}
+
+// PrimarySort returns the first sort directive, if any.
+func (q SearchQuery) PrimarySort() SortDirective {
+	if len(q.Sort) > 0 {
+		return q.Sort[0]
+	}
+	return SortDirective{}
 }
 
 // NewSearchQuery validates and constructs a SearchQuery.
@@ -28,12 +37,12 @@ func NewSearchQuery(q string, limit, offset int) (SearchQuery, error) {
 }
 
 // NewSearchQueryByType validates and constructs a SearchQuery scoped to a specific item type.
-func NewSearchQueryByType(q, itemType string, limit, offset int) (SearchQuery, error) {
+func NewSearchQueryByType(q, itemType string, limit, offset int, sort []SortDirective) (SearchQuery, error) {
 	if q == "" {
 		return SearchQuery{}, fmt.Errorf("query must not be empty")
 	}
 	if itemType == "" {
-		return SearchQuery{}, fmt.Errorf("item_type must not be empty")
+		return SearchQuery{}, fmt.Errorf("asset_type must not be empty")
 	}
 	if limit <= 0 {
 		limit = 20
@@ -44,5 +53,5 @@ func NewSearchQueryByType(q, itemType string, limit, offset int) (SearchQuery, e
 	if offset < 0 {
 		offset = 0
 	}
-	return SearchQuery{Q: q, ItemType: itemType, Limit: limit, Offset: offset}, nil
+	return SearchQuery{Q: q, ItemType: itemType, Limit: limit, Offset: offset, Sort: sort}, nil
 }

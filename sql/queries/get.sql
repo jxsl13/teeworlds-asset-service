@@ -1,12 +1,45 @@
 -- name: GetItemFilePath :one
-SELECT item_file_path, original_filename
-FROM   search_item
-WHERE  item_id   = $1
-AND    item_type = $2;
+SELECT ai.item_file_path, ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.item_id    = $1
+AND    ag.asset_type  = $2;
 
 -- name: GetItemThumbnailPath :one
-SELECT item_thumbnail_path
-FROM   search_item
-WHERE  item_id   = $1
-AND    item_type = $2
-AND    item_thumbnail_path IS NOT NULL;
+SELECT ai.item_thumbnail_path
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.item_id    = $1
+AND    ag.asset_type  = $2
+AND    ai.item_thumbnail_path IS NOT NULL;
+
+-- name: GetGroupThumbnailPath :one
+SELECT ai.item_thumbnail_path
+FROM   asset_item ai
+WHERE  ai.group_id = $1
+AND    ai.item_thumbnail_path IS NOT NULL
+ORDER BY ai.size ASC
+LIMIT 1;
+
+-- name: GetGroupFilePath :one
+SELECT ai.item_file_path, ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.group_id   = $1
+AND    ag.asset_type  = $2
+ORDER BY ai.size ASC
+LIMIT 1;
+
+-- name: GetItemByChecksum :one
+SELECT ai.item_id, ag.group_id, ag.asset_type, ag.group_name, ai.group_value
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.checksum = $1;
+
+-- name: GetGroupFiles :many
+SELECT ag.group_name, ai.group_value, ai.item_file_path, ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.group_id   = $1
+AND    ag.asset_type  = $2
+ORDER BY ai.size ASC;

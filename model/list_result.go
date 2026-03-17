@@ -1,8 +1,7 @@
 package model
 
 import (
-	"encoding/json"
-	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	oapitypes "github.com/oapi-codegen/runtime/types"
@@ -19,9 +18,14 @@ type ListResult struct {
 
 // ListItem is a single item in a list result (no score).
 type ListItem struct {
-	ItemID    uuid.UUID
-	ItemType  sqlc.ItemTypeEnum
-	ItemValue json.RawMessage
+	GroupID   uuid.UUID
+	AssetType sqlc.AssetTypeEnum
+	GroupName string
+	GroupKey  string
+	Creators  string
+	Variants  string // comma-separated "uuid:value" pairs
+	TotalSize int64  // sum of all variant file sizes in bytes
+	CreatedAt time.Time
 }
 
 // ListResultFromRows converts sqlc rows into a domain ListResult.
@@ -33,30 +37,34 @@ func ListResultFromRows(rows []sqlc.ListItemsRow) ListResult {
 	items := make([]ListItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, ListItem{
-			ItemID:    row.ItemID,
-			ItemType:  row.ItemType,
-			ItemValue: row.ItemValue,
+			GroupID:   row.GroupID,
+			AssetType: row.AssetType,
+			GroupName: row.GroupName,
+			GroupKey:  row.GroupKey,
+			Creators:  row.Creators,
+			Variants:  row.Variants,
+			TotalSize: row.TotalSize,
+			CreatedAt: row.CreatedAt,
 		})
 	}
 	return ListResult{Items: items, Total: total}
 }
 
 // ToAPI converts the domain ListResult into an api.ListItemsResponse DTO.
-func (result ListResult) ToAPI() (api.ListItemsResponse, error) {
+func (result ListResult) ToAPI() api.ListItemsResponse {
 	apiResults := make([]api.ListItem, 0, len(result.Items))
 	for _, item := range result.Items {
-		var itemValue map[string]interface{}
-		if err := json.Unmarshal(item.ItemValue, &itemValue); err != nil {
-			return api.ListItemsResponse{}, fmt.Errorf("decode item %s: %w", item.ItemID, err)
-		}
 		apiResults = append(apiResults, api.ListItem{
-			ItemId:    oapitypes.UUID(item.ItemID),
-			ItemType:  api.ItemType(item.ItemType),
-			ItemValue: itemValue,
+			ItemId:    oapitypes.UUID(item.GroupID),
+			AssetType: api.ItemType(item.AssetType),
+			ItemValue: map[string]interface{}{
+				"name":     item.GroupName,
+				"creators": item.Creators,
+			},
 		})
 	}
 	return api.ListItemsResponse{
 		Results: apiResults,
 		Total:   result.Total,
-	}, nil
+	}
 }

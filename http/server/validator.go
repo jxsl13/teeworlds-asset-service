@@ -78,14 +78,15 @@ func (v *Validator) IsAllowedResolution(itemType string, width, height int) bool
 
 // ValidateFile dispatches to the type-specific validator.
 // Returns a non-nil error response if validation fails, or nil if the file is valid.
-func (v *Validator) ValidateFile(itemType api.ItemType, tmpDir *os.Root, tmpName string) *api.ErrorResponse {
+// For PNG types, it also returns the detected resolution string (e.g. "256x128").
+func (v *Validator) ValidateFile(itemType api.ItemType, tmpDir *os.Root, tmpName string) (*api.ErrorResponse, string) {
 	switch itemType {
 	case api.Map:
-		return v.validateMap(tmpDir, tmpName)
+		return v.validateMap(tmpDir, tmpName), ""
 	case api.Gameskin, api.Hud, api.Skin, api.Entity, api.Theme, api.Template, api.Emoticon:
 		return v.validatePNG(tmpDir, tmpName, string(itemType))
 	default:
-		return &api.ErrorResponse{Error: fmt.Sprintf("unknown item type %q", itemType)}
+		return &api.ErrorResponse{Error: fmt.Sprintf("unknown item type %q", itemType)}, ""
 	}
 }
 
@@ -104,22 +105,23 @@ func (v *Validator) validateMap(tmpDir *os.Root, tmpName string) *api.ErrorRespo
 }
 
 // validatePNG validates that the temp file is a valid PNG with an allowed resolution.
-func (v *Validator) validatePNG(tmpDir *os.Root, tmpName string, itemType string) *api.ErrorResponse {
+// Returns the detected resolution string (e.g. "256x128") on success.
+func (v *Validator) validatePNG(tmpDir *os.Root, tmpName string, itemType string) (*api.ErrorResponse, string) {
 	f, err := tmpDir.Open(tmpName)
 	if err != nil {
-		return &api.ErrorResponse{Error: "internal server error"}
+		return &api.ErrorResponse{Error: "internal server error"}, ""
 	}
 	defer f.Close()
 
 	pngCfg, err := png.DecodeConfig(f)
 	if err != nil {
-		return &api.ErrorResponse{Error: "file is not a valid PNG image"}
+		return &api.ErrorResponse{Error: "file is not a valid PNG image"}, ""
 	}
 
 	if !v.IsAllowedResolution(itemType, pngCfg.Width, pngCfg.Height) {
 		return &api.ErrorResponse{
 			Error: fmt.Sprintf("resolution %dx%d is not allowed for item type %q", pngCfg.Width, pngCfg.Height, itemType),
-		}
+		}, ""
 	}
-	return nil
+	return nil, fmt.Sprintf("%dx%d", pngCfg.Width, pngCfg.Height)
 }

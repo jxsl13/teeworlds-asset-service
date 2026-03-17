@@ -32,23 +32,26 @@ type ServerInterface interface {
 	// (GET /api/search)
 	SearchItems(w http.ResponseWriter, r *http.Request, params SearchItemsParams)
 	// Search items scoped to a single item type
-	// (GET /api/search/{item_type})
-	SearchItemsByType(w http.ResponseWriter, r *http.Request, itemType ItemType, params SearchItemsByTypeParams)
+	// (GET /api/search/{asset_type})
+	SearchItemsByType(w http.ResponseWriter, r *http.Request, assetType ItemType, params SearchItemsByTypeParams)
 	// Upload a new item with metadata
-	// (POST /api/upload/{item_type})
-	UploadItem(w http.ResponseWriter, r *http.Request, itemType ItemType)
+	// (POST /api/upload/{asset_type})
+	UploadItem(w http.ResponseWriter, r *http.Request, assetType ItemType)
 	// List and filter items of a specific type
-	// (GET /api/{item_type})
-	ListItems(w http.ResponseWriter, r *http.Request, itemType ItemType, params ListItemsParams)
+	// (GET /api/{asset_type})
+	ListItems(w http.ResponseWriter, r *http.Request, assetType ItemType, params ListItemsParams)
+	// Download all variants of a group as a ZIP archive
+	// (GET /api/{asset_type}/{item_id}/bundle)
+	DownloadBundle(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID)
 	// Download a stored item file
-	// (GET /api/{item_type}/{item_id}/download)
-	DownloadItem(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID)
+	// (GET /api/{asset_type}/{item_id}/download)
+	DownloadItem(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID)
 	// Download the thumbnail for an item
-	// (GET /api/{item_type}/{item_id}/thumbnail)
-	DownloadThumbnail(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID)
+	// (GET /api/{asset_type}/{item_id}/thumbnail)
+	DownloadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params DownloadThumbnailParams)
 	// Render an HTML fragment listing items
-	// (GET /{item_type})
-	RenderItemList(w http.ResponseWriter, r *http.Request, itemType ItemType, params RenderItemListParams)
+	// (GET /{asset_type})
+	RenderItemList(w http.ResponseWriter, r *http.Request, assetType ItemType, params RenderItemListParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -80,38 +83,44 @@ func (_ Unimplemented) SearchItems(w http.ResponseWriter, r *http.Request, param
 }
 
 // Search items scoped to a single item type
-// (GET /api/search/{item_type})
-func (_ Unimplemented) SearchItemsByType(w http.ResponseWriter, r *http.Request, itemType ItemType, params SearchItemsByTypeParams) {
+// (GET /api/search/{asset_type})
+func (_ Unimplemented) SearchItemsByType(w http.ResponseWriter, r *http.Request, assetType ItemType, params SearchItemsByTypeParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Upload a new item with metadata
-// (POST /api/upload/{item_type})
-func (_ Unimplemented) UploadItem(w http.ResponseWriter, r *http.Request, itemType ItemType) {
+// (POST /api/upload/{asset_type})
+func (_ Unimplemented) UploadItem(w http.ResponseWriter, r *http.Request, assetType ItemType) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // List and filter items of a specific type
-// (GET /api/{item_type})
-func (_ Unimplemented) ListItems(w http.ResponseWriter, r *http.Request, itemType ItemType, params ListItemsParams) {
+// (GET /api/{asset_type})
+func (_ Unimplemented) ListItems(w http.ResponseWriter, r *http.Request, assetType ItemType, params ListItemsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Download all variants of a group as a ZIP archive
+// (GET /api/{asset_type}/{item_id}/bundle)
+func (_ Unimplemented) DownloadBundle(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Download a stored item file
-// (GET /api/{item_type}/{item_id}/download)
-func (_ Unimplemented) DownloadItem(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID) {
+// (GET /api/{asset_type}/{item_id}/download)
+func (_ Unimplemented) DownloadItem(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Download the thumbnail for an item
-// (GET /api/{item_type}/{item_id}/thumbnail)
-func (_ Unimplemented) DownloadThumbnail(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID) {
+// (GET /api/{asset_type}/{item_id}/thumbnail)
+func (_ Unimplemented) DownloadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params DownloadThumbnailParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
 // Render an HTML fragment listing items
-// (GET /{item_type})
-func (_ Unimplemented) RenderItemList(w http.ResponseWriter, r *http.Request, itemType ItemType, params RenderItemListParams) {
+// (GET /{asset_type})
+func (_ Unimplemented) RenderItemList(w http.ResponseWriter, r *http.Request, assetType ItemType, params RenderItemListParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -232,12 +241,12 @@ func (siw *ServerInterfaceWrapper) SearchItemsByType(w http.ResponseWriter, r *h
 
 	var err error
 
-	// ------------- Path parameter "item_type" -------------
-	var itemType ItemType
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
 
-	err = runtime.BindStyledParameterWithOptions("simple", "item_type", chi.URLParam(r, "item_type"), &itemType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
 		return
 	}
 
@@ -276,7 +285,7 @@ func (siw *ServerInterfaceWrapper) SearchItemsByType(w http.ResponseWriter, r *h
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.SearchItemsByType(w, r, itemType, params)
+		siw.Handler.SearchItemsByType(w, r, assetType, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -291,17 +300,17 @@ func (siw *ServerInterfaceWrapper) UploadItem(w http.ResponseWriter, r *http.Req
 
 	var err error
 
-	// ------------- Path parameter "item_type" -------------
-	var itemType ItemType
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
 
-	err = runtime.BindStyledParameterWithOptions("simple", "item_type", chi.URLParam(r, "item_type"), &itemType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UploadItem(w, r, itemType)
+		siw.Handler.UploadItem(w, r, assetType)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -316,12 +325,12 @@ func (siw *ServerInterfaceWrapper) ListItems(w http.ResponseWriter, r *http.Requ
 
 	var err error
 
-	// ------------- Path parameter "item_type" -------------
-	var itemType ItemType
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
 
-	err = runtime.BindStyledParameterWithOptions("simple", "item_type", chi.URLParam(r, "item_type"), &itemType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
 		return
 	}
 
@@ -385,7 +394,41 @@ func (siw *ServerInterfaceWrapper) ListItems(w http.ResponseWriter, r *http.Requ
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListItems(w, r, itemType, params)
+		siw.Handler.ListItems(w, r, assetType, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadBundle operation middleware
+func (siw *ServerInterfaceWrapper) DownloadBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
+
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadBundle(w, r, assetType, itemId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -400,12 +443,12 @@ func (siw *ServerInterfaceWrapper) DownloadItem(w http.ResponseWriter, r *http.R
 
 	var err error
 
-	// ------------- Path parameter "item_type" -------------
-	var itemType ItemType
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
 
-	err = runtime.BindStyledParameterWithOptions("simple", "item_type", chi.URLParam(r, "item_type"), &itemType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
 		return
 	}
 
@@ -419,7 +462,7 @@ func (siw *ServerInterfaceWrapper) DownloadItem(w http.ResponseWriter, r *http.R
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DownloadItem(w, r, itemType, itemId)
+		siw.Handler.DownloadItem(w, r, assetType, itemId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -434,12 +477,12 @@ func (siw *ServerInterfaceWrapper) DownloadThumbnail(w http.ResponseWriter, r *h
 
 	var err error
 
-	// ------------- Path parameter "item_type" -------------
-	var itemType ItemType
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
 
-	err = runtime.BindStyledParameterWithOptions("simple", "item_type", chi.URLParam(r, "item_type"), &itemType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
 		return
 	}
 
@@ -452,8 +495,32 @@ func (siw *ServerInterfaceWrapper) DownloadThumbnail(w http.ResponseWriter, r *h
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DownloadThumbnailParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DownloadThumbnail(w, r, itemType, itemId)
+		siw.Handler.DownloadThumbnail(w, r, assetType, itemId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -468,12 +535,12 @@ func (siw *ServerInterfaceWrapper) RenderItemList(w http.ResponseWriter, r *http
 
 	var err error
 
-	// ------------- Path parameter "item_type" -------------
-	var itemType ItemType
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
 
-	err = runtime.BindStyledParameterWithOptions("simple", "item_type", chi.URLParam(r, "item_type"), &itemType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_type", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
 		return
 	}
 
@@ -504,8 +571,16 @@ func (siw *ServerInterfaceWrapper) RenderItemList(w http.ResponseWriter, r *http
 		return
 	}
 
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RenderItemList(w, r, itemType, params)
+		siw.Handler.RenderItemList(w, r, assetType, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -641,22 +716,25 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/search", wrapper.SearchItems)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/search/{item_type}", wrapper.SearchItemsByType)
+		r.Get(options.BaseURL+"/api/search/{asset_type}", wrapper.SearchItemsByType)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/upload/{item_type}", wrapper.UploadItem)
+		r.Post(options.BaseURL+"/api/upload/{asset_type}", wrapper.UploadItem)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/{item_type}", wrapper.ListItems)
+		r.Get(options.BaseURL+"/api/{asset_type}", wrapper.ListItems)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/{item_type}/{item_id}/download", wrapper.DownloadItem)
+		r.Get(options.BaseURL+"/api/{asset_type}/{item_id}/bundle", wrapper.DownloadBundle)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/{item_type}/{item_id}/thumbnail", wrapper.DownloadThumbnail)
+		r.Get(options.BaseURL+"/api/{asset_type}/{item_id}/download", wrapper.DownloadItem)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/{item_type}", wrapper.RenderItemList)
+		r.Get(options.BaseURL+"/api/{asset_type}/{item_id}/thumbnail", wrapper.DownloadThumbnail)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/{asset_type}", wrapper.RenderItemList)
 	})
 
 	return r
@@ -794,8 +872,8 @@ func (response SearchItems500JSONResponse) VisitSearchItemsResponse(w http.Respo
 }
 
 type SearchItemsByTypeRequestObject struct {
-	ItemType ItemType `json:"item_type"`
-	Params   SearchItemsByTypeParams
+	AssetType ItemType `json:"asset_type"`
+	Params    SearchItemsByTypeParams
 }
 
 type SearchItemsByTypeResponseObject interface {
@@ -830,8 +908,8 @@ func (response SearchItemsByType500JSONResponse) VisitSearchItemsByTypeResponse(
 }
 
 type UploadItemRequestObject struct {
-	ItemType ItemType `json:"item_type"`
-	Body     *multipart.Reader
+	AssetType ItemType `json:"asset_type"`
+	Body      *multipart.Reader
 }
 
 type UploadItemResponseObject interface {
@@ -884,8 +962,8 @@ func (response UploadItem507JSONResponse) VisitUploadItemResponse(w http.Respons
 }
 
 type ListItemsRequestObject struct {
-	ItemType ItemType `json:"item_type"`
-	Params   ListItemsParams
+	AssetType ItemType `json:"asset_type"`
+	Params    ListItemsParams
 }
 
 type ListItemsResponseObject interface {
@@ -919,9 +997,55 @@ func (response ListItems500JSONResponse) VisitListItemsResponse(w http.ResponseW
 	return json.NewEncoder(w).Encode(response)
 }
 
+type DownloadBundleRequestObject struct {
+	AssetType ItemType           `json:"asset_type"`
+	ItemId    openapi_types.UUID `json:"item_id"`
+}
+
+type DownloadBundleResponseObject interface {
+	VisitDownloadBundleResponse(w http.ResponseWriter) error
+}
+
+type DownloadBundle200ApplicationzipResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response DownloadBundle200ApplicationzipResponse) VisitDownloadBundleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/zip")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadBundle404JSONResponse ErrorResponse
+
+func (response DownloadBundle404JSONResponse) VisitDownloadBundleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadBundle500JSONResponse ErrorResponse
+
+func (response DownloadBundle500JSONResponse) VisitDownloadBundleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type DownloadItemRequestObject struct {
-	ItemType ItemType           `json:"item_type"`
-	ItemId   openapi_types.UUID `json:"item_id"`
+	AssetType ItemType           `json:"asset_type"`
+	ItemId    openapi_types.UUID `json:"item_id"`
 }
 
 type DownloadItemResponseObject interface {
@@ -966,16 +1090,23 @@ func (response DownloadItem500JSONResponse) VisitDownloadItemResponse(w http.Res
 }
 
 type DownloadThumbnailRequestObject struct {
-	ItemType ItemType           `json:"item_type"`
-	ItemId   openapi_types.UUID `json:"item_id"`
+	AssetType ItemType           `json:"asset_type"`
+	ItemId    openapi_types.UUID `json:"item_id"`
+	Params    DownloadThumbnailParams
 }
 
 type DownloadThumbnailResponseObject interface {
 	VisitDownloadThumbnailResponse(w http.ResponseWriter) error
 }
 
+type DownloadThumbnail200ResponseHeaders struct {
+	CacheControl string
+	ETag         string
+}
+
 type DownloadThumbnail200ImagepngResponse struct {
 	Body          io.Reader
+	Headers       DownloadThumbnail200ResponseHeaders
 	ContentLength int64
 }
 
@@ -984,6 +1115,8 @@ func (response DownloadThumbnail200ImagepngResponse) VisitDownloadThumbnailRespo
 	if response.ContentLength != 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
 	}
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
 	w.WriteHeader(200)
 
 	if closer, ok := response.Body.(io.ReadCloser); ok {
@@ -991,6 +1124,14 @@ func (response DownloadThumbnail200ImagepngResponse) VisitDownloadThumbnailRespo
 	}
 	_, err := io.Copy(w, response.Body)
 	return err
+}
+
+type DownloadThumbnail304Response struct {
+}
+
+func (response DownloadThumbnail304Response) VisitDownloadThumbnailResponse(w http.ResponseWriter) error {
+	w.WriteHeader(304)
+	return nil
 }
 
 type DownloadThumbnail404JSONResponse ErrorResponse
@@ -1012,8 +1153,8 @@ func (response DownloadThumbnail500JSONResponse) VisitDownloadThumbnailResponse(
 }
 
 type RenderItemListRequestObject struct {
-	ItemType ItemType `json:"item_type"`
-	Params   RenderItemListParams
+	AssetType ItemType `json:"asset_type"`
+	Params    RenderItemListParams
 }
 
 type RenderItemListResponseObject interface {
@@ -1072,22 +1213,25 @@ type StrictServerInterface interface {
 	// (GET /api/search)
 	SearchItems(ctx context.Context, request SearchItemsRequestObject) (SearchItemsResponseObject, error)
 	// Search items scoped to a single item type
-	// (GET /api/search/{item_type})
+	// (GET /api/search/{asset_type})
 	SearchItemsByType(ctx context.Context, request SearchItemsByTypeRequestObject) (SearchItemsByTypeResponseObject, error)
 	// Upload a new item with metadata
-	// (POST /api/upload/{item_type})
+	// (POST /api/upload/{asset_type})
 	UploadItem(ctx context.Context, request UploadItemRequestObject) (UploadItemResponseObject, error)
 	// List and filter items of a specific type
-	// (GET /api/{item_type})
+	// (GET /api/{asset_type})
 	ListItems(ctx context.Context, request ListItemsRequestObject) (ListItemsResponseObject, error)
+	// Download all variants of a group as a ZIP archive
+	// (GET /api/{asset_type}/{item_id}/bundle)
+	DownloadBundle(ctx context.Context, request DownloadBundleRequestObject) (DownloadBundleResponseObject, error)
 	// Download a stored item file
-	// (GET /api/{item_type}/{item_id}/download)
+	// (GET /api/{asset_type}/{item_id}/download)
 	DownloadItem(ctx context.Context, request DownloadItemRequestObject) (DownloadItemResponseObject, error)
 	// Download the thumbnail for an item
-	// (GET /api/{item_type}/{item_id}/thumbnail)
+	// (GET /api/{asset_type}/{item_id}/thumbnail)
 	DownloadThumbnail(ctx context.Context, request DownloadThumbnailRequestObject) (DownloadThumbnailResponseObject, error)
 	// Render an HTML fragment listing items
-	// (GET /{item_type})
+	// (GET /{asset_type})
 	RenderItemList(ctx context.Context, request RenderItemListRequestObject) (RenderItemListResponseObject, error)
 }
 
@@ -1221,10 +1365,10 @@ func (sh *strictHandler) SearchItems(w http.ResponseWriter, r *http.Request, par
 }
 
 // SearchItemsByType operation middleware
-func (sh *strictHandler) SearchItemsByType(w http.ResponseWriter, r *http.Request, itemType ItemType, params SearchItemsByTypeParams) {
+func (sh *strictHandler) SearchItemsByType(w http.ResponseWriter, r *http.Request, assetType ItemType, params SearchItemsByTypeParams) {
 	var request SearchItemsByTypeRequestObject
 
-	request.ItemType = itemType
+	request.AssetType = assetType
 	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
@@ -1248,10 +1392,10 @@ func (sh *strictHandler) SearchItemsByType(w http.ResponseWriter, r *http.Reques
 }
 
 // UploadItem operation middleware
-func (sh *strictHandler) UploadItem(w http.ResponseWriter, r *http.Request, itemType ItemType) {
+func (sh *strictHandler) UploadItem(w http.ResponseWriter, r *http.Request, assetType ItemType) {
 	var request UploadItemRequestObject
 
-	request.ItemType = itemType
+	request.AssetType = assetType
 
 	if reader, err := r.MultipartReader(); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode multipart body: %w", err))
@@ -1281,10 +1425,10 @@ func (sh *strictHandler) UploadItem(w http.ResponseWriter, r *http.Request, item
 }
 
 // ListItems operation middleware
-func (sh *strictHandler) ListItems(w http.ResponseWriter, r *http.Request, itemType ItemType, params ListItemsParams) {
+func (sh *strictHandler) ListItems(w http.ResponseWriter, r *http.Request, assetType ItemType, params ListItemsParams) {
 	var request ListItemsRequestObject
 
-	request.ItemType = itemType
+	request.AssetType = assetType
 	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
@@ -1307,11 +1451,38 @@ func (sh *strictHandler) ListItems(w http.ResponseWriter, r *http.Request, itemT
 	}
 }
 
+// DownloadBundle operation middleware
+func (sh *strictHandler) DownloadBundle(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID) {
+	var request DownloadBundleRequestObject
+
+	request.AssetType = assetType
+	request.ItemId = itemId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadBundle(ctx, request.(DownloadBundleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadBundle")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadBundleResponseObject); ok {
+		if err := validResponse.VisitDownloadBundleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DownloadItem operation middleware
-func (sh *strictHandler) DownloadItem(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID) {
+func (sh *strictHandler) DownloadItem(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID) {
 	var request DownloadItemRequestObject
 
-	request.ItemType = itemType
+	request.AssetType = assetType
 	request.ItemId = itemId
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
@@ -1335,11 +1506,12 @@ func (sh *strictHandler) DownloadItem(w http.ResponseWriter, r *http.Request, it
 }
 
 // DownloadThumbnail operation middleware
-func (sh *strictHandler) DownloadThumbnail(w http.ResponseWriter, r *http.Request, itemType ItemType, itemId openapi_types.UUID) {
+func (sh *strictHandler) DownloadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params DownloadThumbnailParams) {
 	var request DownloadThumbnailRequestObject
 
-	request.ItemType = itemType
+	request.AssetType = assetType
 	request.ItemId = itemId
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.DownloadThumbnail(ctx, request.(DownloadThumbnailRequestObject))
@@ -1362,10 +1534,10 @@ func (sh *strictHandler) DownloadThumbnail(w http.ResponseWriter, r *http.Reques
 }
 
 // RenderItemList operation middleware
-func (sh *strictHandler) RenderItemList(w http.ResponseWriter, r *http.Request, itemType ItemType, params RenderItemListParams) {
+func (sh *strictHandler) RenderItemList(w http.ResponseWriter, r *http.Request, assetType ItemType, params RenderItemListParams) {
 	var request RenderItemListRequestObject
 
-	request.ItemType = itemType
+	request.AssetType = assetType
 	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {

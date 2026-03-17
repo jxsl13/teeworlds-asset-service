@@ -19,7 +19,7 @@ func (s *Server) SearchItemsByType(ctx context.Context, request api.SearchItemsB
 		offset = *request.Params.Offset
 	}
 
-	query, err := model.NewSearchQueryByType(request.Params.Q, string(request.ItemType), limit, offset)
+	query, err := model.NewSearchQueryByType(request.Params.Q, string(request.AssetType), limit, offset, nil)
 	if err != nil {
 		return api.SearchItemsByType400JSONResponse{Error: err.Error()}, nil
 	}
@@ -29,9 +29,6 @@ func (s *Server) SearchItemsByType(ctx context.Context, request api.SearchItemsB
 		return nil, fmt.Errorf("search by type: %w", err)
 	}
 
-	resp, err := result.ToAPI()
-	if err != nil {
-		return nil, fmt.Errorf("decode search results: %w", err)
-	}
+	resp := result.ToAPI()
 	return api.SearchItemsByType200JSONResponse(resp), nil
 }

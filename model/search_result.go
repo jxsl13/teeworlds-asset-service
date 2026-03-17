@@ -36,28 +36,28 @@ func SearchResultFromByTypeRows(rows []sqlc.SearchByTypeRow) SearchResult {
 	items := make([]Item, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, Item{
-			ItemID:    row.ItemID,
-			ItemType:  row.ItemType,
+			GroupID:   row.GroupID,
+			AssetType: row.AssetType,
+			GroupName: row.GroupName,
+			GroupKey:  row.GroupKey,
+			Creators:  row.Creators,
+			Variants:  row.Variants,
+			TotalSize: row.TotalSize,
+			CreatedAt: row.CreatedAt,
 			Score:     row.Sml,
-			ItemValue: row.ItemValue,
 		})
 	}
 	return SearchResult{Items: items, Total: total}
 }
 
 // ToAPI converts the domain SearchResult into an api.SearchResponse DTO.
-// Returns the first decode error encountered, if any.
-func (result SearchResult) ToAPI() (api.SearchResponse, error) {
+func (result SearchResult) ToAPI() api.SearchResponse {
 	apiResults := make([]api.SearchResult, 0, len(result.Items))
 	for _, item := range result.Items {
-		r, err := item.ToAPI()
-		if err != nil {
-			return api.SearchResponse{}, err
-		}
-		apiResults = append(apiResults, r)
+		apiResults = append(apiResults, item.ToAPI())
 	}
 	return api.SearchResponse{
 		Results: apiResults,
 		Total:   result.Total,
-	}, nil
+	}
 }

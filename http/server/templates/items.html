@@ -1,31 +1,71 @@
 <table class="items-table">
+  <thead>
+    <tr class="sort-header">
+      <th class="col-thumb"></th>
+      {{range .Columns}}
+      <th class="col-{{.Field}}{{if .Dir}} active{{end}}"
+          data-field="{{.Field}}"
+          onclick="onSortClick(event, '{{.Field}}')">
+        <span class="sort-label">{{.Label}}</span>
+        {{if eq .Dir "asc"}}<span class="sort-indicator">&uarr;</span>{{end}}
+        {{if eq .Dir "desc"}}<span class="sort-indicator">&darr;</span>{{end}}
+        {{if gt .Rank 1}}<span class="sort-rank">{{.Rank}}</span>{{end}}
+      </th>
+      {{end}}
+      <th class="col-actions">Downloads</th>
+    </tr>
+  </thead>
+  <tbody>
   {{if .Items}}
     {{range .Items}}
     <tr data-type="{{.ItemType}}">
       <td class="col-thumb">
         {{if .HasThumbnail}}
-        <img src="/api/{{.ItemType}}/{{.ItemID}}/thumbnail" alt="{{.Name}}" loading="lazy" onclick="openPreview(this.src)">
+        <img src="/api/{{.ItemType}}/{{.GroupID}}/thumbnail" alt="{{.Name}}" loading="lazy" onclick="openPreview(this.src)">
         {{else}}
         <div class="thumb-placeholder">{{.ItemType}}</div>
         {{end}}
       </td>
       <td class="col-name">{{.Name}}</td>
-      <td class="col-creator">{{.Creators}}</td>
+      <td class="col-creators">{{.Creators}}</td>
+      <td class="col-size">{{.Size}}</td>
+      <td class="col-created_at">{{.Date}}</td>
       <td class="col-actions">
-        <a href="/api/{{.ItemType}}/{{.ItemID}}/download" title="Download">Download</a>
-        {{if eq .ItemType "map"}}<a href="/api/map/{{.ItemID}}/extract" title="Extract embedded images as ZIP">Images</a>{{end}}
+        {{if .Variants}}
+          {{$type := .ItemType}}
+          {{$groupID := .GroupID}}
+          {{range .Variants}}
+          <a href="/api/{{$type}}/{{.ItemID}}/download" title="Download {{.Label}}">{{if .Label}}{{.Label}}{{else}}Download{{end}}</a>
+          {{end}}
+          {{if ne $type "map"}}
+          <a href="/api/{{$type}}/{{$groupID}}/bundle" class="btn-bundle" title="Download all resolutions as ZIP">
+            <svg class="icon-zip" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+              <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm5 0v4h4L9 0zM6 1h1v1H6V1zm0 2h1v1H6V3zm0 2h1v1H6V5zm0 2h1v1H6V7zm0 2h2.5a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5H6a.5.5 0 0 1-.5-.5v-2A.5.5 0 0 1 6 9zm0 1v1h2v-1H6z"/>
+            </svg>
+          </a>
+          {{end}}
+        {{else}}
+        <a href="/api/{{.ItemType}}/{{.GroupID}}/download" title="Download">Download</a>
+        {{end}}
+        {{if eq .ItemType "map"}}<a href="/api/map/{{.GroupID}}/extract" class="btn-extract" title="Extract embedded images as ZIP">
+            <svg class="icon-extract" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+              <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+              <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
+            </svg>
+          </a>{{end}}
       </td>
     </tr>
     {{end}}
   {{else}}
-    <tr><td colspan="4" class="empty-state">No items found.</td></tr>
+    <tr><td colspan="6" class="empty-state">No items found.</td></tr>
   {{end}}
+  </tbody>
 </table>
 
 {{if .Items}}
 <div class="pagination">
-  <button hx-get="{{.PrevURL}}" hx-target="#content" {{if le .Offset 0}}disabled{{end}}>&laquo; Prev</button>
+  <button id="prevPage" hx-get="{{.PrevURL}}" hx-target="#content" {{if le .Offset 0}}disabled{{end}}><kbd>&larr;</kbd> Prev</button>
   <span class="page-info">{{.PageStart}}&ndash;{{.PageEnd}} of {{.Total}}</span>
-  <button hx-get="{{.NextURL}}" hx-target="#content" {{if ge .PageEnd .Total}}disabled{{end}}>Next &raquo;</button>
+  <button id="nextPage" hx-get="{{.NextURL}}" hx-target="#content" {{if ge .PageEnd .Total}}disabled{{end}}>Next <kbd>&rarr;</kbd></button>
 </div>
 {{end}}

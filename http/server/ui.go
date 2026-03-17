@@ -3,11 +3,12 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jxsl13/asset-service/http/api"
 	"github.com/jxsl13/asset-service/model"
@@ -17,7 +18,7 @@ import (
 // RenderUI implements api.StrictServerInterface.
 // It returns the full HTML page with tabs and the HTMX search bar.
 func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api.RenderUIResponseObject, error) {
-	allEnums := sqlc.AllItemTypeEnumValues()
+	allEnums := sqlc.AllAssetTypeEnumValues()
 	types := make([]string, 0, len(allEnums))
 	for _, e := range allEnums {
 		types = append(types, string(e))
@@ -65,7 +66,16 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 		q = strings.TrimSpace(*request.Params.Q)
 	}
 
-	itemType := string(request.ItemType)
+	sortRaw := ""
+	if request.Params.Sort != nil {
+		sortRaw = *request.Params.Sort
+	}
+	sortDirs := model.ParseSortDirectives(sortRaw)
+	if len(sortDirs) == 0 {
+		sortDirs = []model.SortDirective{{Field: "name", Desc: false}}
+	}
+
+	itemType := string(request.AssetType)
 
 	var (
 		views []itemView
@@ -75,7 +85,7 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 	svc := s.newService()
 
 	if q != "" {
-		query, err := model.NewSearchQueryByType(q, itemType, limit, offset)
+		query, err := model.NewSearchQueryByType(q, itemType, limit, offset, sortDirs)
 		if err != nil {
 			return api.RenderItemList400JSONResponse{Error: err.Error()}, nil
 		}
@@ -85,10 +95,10 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 		}
 		total = result.Total
 		for _, item := range result.Items {
-			views = append(views, toItemView(item.ItemID.String(), string(item.ItemType), item.ItemValue))
+			views = append(views, toItemView(item.GroupID.String(), string(item.AssetType), item.GroupName, item.GroupKey, item.Creators, item.Variants, item.TotalSize, item.CreatedAt))
 		}
 	} else {
-		query, err := model.NewListQuery(itemType, limit, offset, nil, nil, nil, "name", false)
+		query, err := model.NewListQuery(itemType, limit, offset, nil, nil, nil, sortDirs)
 		if err != nil {
 			return api.RenderItemList400JSONResponse{Error: err.Error()}, nil
 		}
@@ -98,9 +108,15 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 		}
 		total = result.Total
 		for _, item := range result.Items {
-			views = append(views, toItemView(item.ItemID.String(), string(item.ItemType), item.ItemValue))
+			views = append(views, toItemView(item.GroupID.String(), string(item.AssetType), item.GroupName, item.GroupKey, item.Creators, item.Variants, item.TotalSize, item.CreatedAt))
 		}
 	}
+
+	// Build sort state for template columns.
+	columns := buildSortColumns(sortDirs)
+
+	// Build the sort param string for pagination links.
+	sortParam := buildSortParam(sortDirs)
 
 	pageEnd := offset + len(views)
 	prevOffset := offset - limit
@@ -113,6 +129,10 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 	if q != "" {
 		qParam = "&q=" + template.URLQueryEscaper(q)
 	}
+	sortQParam := ""
+	if sortParam != "" {
+		sortQParam = "&sort=" + template.URLQueryEscaper(sortParam)
+	}
 
 	data := itemsPageData{
 		Items:     views,
@@ -121,8 +141,10 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 		Offset:    offset,
 		PageStart: offset + 1,
 		PageEnd:   pageEnd,
-		PrevURL:   fmt.Sprintf("%s?limit=%d&offset=%d%s", baseURL, limit, prevOffset, qParam),
-		NextURL:   fmt.Sprintf("%s?limit=%d&offset=%d%s", baseURL, limit, offset+limit, qParam),
+		PrevURL:   fmt.Sprintf("%s?limit=%d&offset=%d%s%s", baseURL, limit, prevOffset, qParam, sortQParam),
+		NextURL:   fmt.Sprintf("%s?limit=%d&offset=%d%s%s", baseURL, limit, offset+limit, qParam, sortQParam),
+		SortParam: sortParam,
+		Columns:   columns,
 	}
 
 	var buf bytes.Buffer
@@ -139,8 +161,8 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 	// stays in sync with the visible content (enables refresh & bookmarks).
 	if isHxRequest(ctx) {
 		pushURL := baseURL
-		if q != "" || offset > 0 {
-			pushURL = fmt.Sprintf("%s?limit=%d&offset=%d%s", baseURL, limit, offset, qParam)
+		if q != "" || offset > 0 || sortParam != "" {
+			pushURL = fmt.Sprintf("%s?limit=%d&offset=%d%s%s", baseURL, limit, offset, qParam, sortQParam)
 		}
 		return renderItemListHtmxResponse{
 			inner: resp,
@@ -154,9 +176,9 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 }
 
 // renderFullPage renders the complete layout HTML with the given item type
-// pre-selected. Used when /{item_type} is accessed via direct browser navigation.
+// pre-selected. Used when /{asset_type} is accessed via direct browser navigation.
 func (s *Server) renderFullPage(activeType, query string) (api.RenderItemListResponseObject, error) {
-	allEnums := sqlc.AllItemTypeEnumValues()
+	allEnums := sqlc.AllAssetTypeEnumValues()
 	types := make([]string, 0, len(allEnums))
 	for _, e := range allEnums {
 		types = append(types, string(e))
@@ -180,12 +202,30 @@ func (s *Server) renderFullPage(activeType, query string) (api.RenderItemListRes
 
 // ── template view models ──────────────────────────────────────────────────────
 
+// variantView represents a single downloadable variant (e.g. one resolution).
+type variantView struct {
+	ItemID string
+	Label  string // e.g. "256x128"
+}
+
 type itemView struct {
-	ItemID       string
+	GroupID      string
 	ItemType     string
 	Name         string
 	Creators     string
+	Size         string        // human-readable total size
+	Date         string        // formatted creation date
+	GroupKey     string        // e.g. "resolution" — used to label the variants column
+	Variants     []variantView // individual downloadable variants within this group
 	HasThumbnail bool
+}
+
+// sortColumn describes a column's current sort state for the template.
+type sortColumn struct {
+	Field string // "name" or "created_at"
+	Label string // display label
+	Dir   string // "asc", "desc", or "" (unsorted)
+	Rank  int    // 1-based position in multi-sort, 0 if not active
 }
 
 type itemsPageData struct {
@@ -197,23 +237,145 @@ type itemsPageData struct {
 	PageEnd   int
 	PrevURL   string
 	NextURL   string
+	SortParam string       // raw sort param to preserve in pagination links
+	Columns   []sortColumn // columns for header rendering
 }
 
-func toItemView(id, itemType string, raw json.RawMessage) itemView {
-	var val struct {
-		Name     string   `json:"name"`
-		Creators []string `json:"creators"`
+// parseVariants splits the DB-aggregated "uuid:value,uuid:value,…" string
+// into a slice of variantView sorted by resolution (smallest to largest).
+// Resolution labels like "256x128" are sorted by w*h, then w, then h.
+func parseVariants(raw string) []variantView {
+	if raw == "" {
+		return nil
 	}
-	json.Unmarshal(raw, &val)
-	creators := strings.Join(val.Creators, ", ")
+	parts := strings.Split(raw, ",")
+	out := make([]variantView, 0, len(parts))
+	for _, p := range parts {
+		idx := strings.IndexByte(p, ':')
+		if idx < 0 {
+			continue
+		}
+		out = append(out, variantView{
+			ItemID: p[:idx],
+			Label:  p[idx+1:],
+		})
+	}
+	slices.SortFunc(out, func(a, b variantView) int {
+		aw, ah := parseResolution(a.Label)
+		bw, bh := parseResolution(b.Label)
+		if d := (aw * ah) - (bw * bh); d != 0 {
+			return d
+		}
+		if d := aw - bw; d != 0 {
+			return d
+		}
+		return ah - bh
+	})
+	return out
+}
+
+// parseResolution extracts width and height from a "WxH" string.
+// Returns (0, 0) for non-resolution labels.
+func parseResolution(s string) (int, int) {
+	idx := strings.IndexByte(s, 'x')
+	if idx < 0 {
+		return 0, 0
+	}
+	w, err1 := strconv.Atoi(s[:idx])
+	h, err2 := strconv.Atoi(s[idx+1:])
+	if err1 != nil || err2 != nil {
+		return 0, 0
+	}
+	return w, h
+}
+
+func toItemView(groupID, assetType, groupName, groupKey, creators, variants string, totalSize int64, createdAt time.Time) itemView {
 	if creators == "" {
 		creators = "unknown"
 	}
+	date := createdAt.Format("2006-01-02")
+	if createdAt.Year() <= 1970 {
+		date = ""
+	}
 	return itemView{
-		ItemID:       id,
-		ItemType:     itemType,
-		Name:         val.Name,
+		GroupID:      groupID,
+		ItemType:     assetType,
+		Name:         groupName,
 		Creators:     creators,
+		Size:         formatSize(totalSize),
+		Date:         date,
+		GroupKey:     groupKey,
+		Variants:     parseVariants(variants),
 		HasThumbnail: true,
 	}
+}
+
+// formatSize converts a byte count to a human-readable string.
+func formatSize(b int64) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+		gb = 1024 * mb
+	)
+	switch {
+	case b >= gb:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
+	case b >= mb:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(mb))
+	case b >= kb:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+// buildSortColumns builds the sortColumn slice used by the template header.
+func buildSortColumns(dirs []model.SortDirective) []sortColumn {
+	allCols := []struct{ field, label string }{
+		{"name", "Name"},
+		{"creators", "Creators"},
+		{"size", "Size"},
+		{"created_at", "Date"},
+	}
+	// Build a lookup from active directives.
+	active := make(map[string]struct {
+		dir  string
+		rank int
+	})
+	for i, d := range dirs {
+		dir := "asc"
+		if d.Desc {
+			dir = "desc"
+		}
+		active[d.Field] = struct {
+			dir  string
+			rank int
+		}{dir, i + 1}
+	}
+	cols := make([]sortColumn, 0, len(allCols))
+	for _, c := range allCols {
+		sc := sortColumn{Field: c.field, Label: c.label}
+		if a, ok := active[c.field]; ok {
+			sc.Dir = a.dir
+			sc.Rank = a.rank
+		}
+		cols = append(cols, sc)
+	}
+	return cols
+}
+
+// buildSortParam serialises sort directives back into "field:dir,field:dir".
+func buildSortParam(dirs []model.SortDirective) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		dir := "asc"
+		if d.Desc {
+			dir = "desc"
+		}
+		parts = append(parts, d.Field+":"+dir)
+	}
+	return strings.Join(parts, ",")
 }

@@ -3,7 +3,6 @@ package sql_test
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -87,20 +86,26 @@ func TestSearch(t *testing.T) {
 	}
 	db := stdlib.OpenDBFromPool(pool)
 	t.Cleanup(func() { _ = db.Close() })
-	if _, err := db.ExecContext(ctx, "TRUNCATE search_value, search_item CASCADE"); err != nil {
+	if _, err := db.ExecContext(ctx, "TRUNCATE search_value, asset_item, asset_group CASCADE"); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
+	groupID := uuid.New()
 	itemID := uuid.New()
-	payload, _ := json.Marshal(map[string]string{"name": "DDNet"})
 	if _, err := db.ExecContext(ctx,
-		"INSERT INTO search_item (item_id, item_type, item_value) VALUES ($1, $2, $3)",
-		itemID, postgresql.ItemTypeEnumMap, payload,
+		"INSERT INTO asset_group (group_id, asset_type, group_name, group_key) VALUES ($1, $2, $3, $4)",
+		groupID, postgresql.AssetTypeEnumMap, "DDNet", "resolution",
 	); err != nil {
-		t.Fatalf("insert search_item: %v", err)
+		t.Fatalf("insert asset_group: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
-		"INSERT INTO search_value (item_id, key_name, key_value) VALUES ($1, $2, $3)",
-		itemID, "name", "DDnet",
+		"INSERT INTO asset_item (item_id, group_id, item_file_path, checksum) VALUES ($1, $2, $3, $4)",
+		itemID, groupID, "/map/test.map", "abc123",
+	); err != nil {
+		t.Fatalf("insert asset_item: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO search_value (group_id, key_name, key_value) VALUES ($1, $2, $3)",
+		groupID, "name", "DDnet",
 	); err != nil {
 		t.Fatalf("insert search_value: %v", err)
 	}
@@ -117,11 +122,11 @@ func TestSearch(t *testing.T) {
 		if len(results) == 0 {
 			t.Fatal("expected at least one result, got none")
 		}
-		if results[0].ItemID != itemID {
-			t.Errorf("item_id: want %s, got %s", itemID, results[0].ItemID)
+		if results[0].GroupID != groupID {
+			t.Errorf("group_id: want %s, got %s", groupID, results[0].GroupID)
 		}
-		if results[0].ItemType != postgresql.ItemTypeEnumMap {
-			t.Errorf("item_type: want %s, got %s", postgresql.ItemTypeEnumMap, results[0].ItemType)
+		if results[0].AssetType != postgresql.AssetTypeEnumMap {
+			t.Errorf("asset_type: want %s, got %s", postgresql.AssetTypeEnumMap, results[0].AssetType)
 		}
 		if results[0].Sml <= 0 {
 			t.Errorf("sml score should be > 0, got %f", results[0].Sml)

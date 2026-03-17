@@ -35,14 +35,13 @@ func (s *Server) ListItems(ctx context.Context, request api.ListItemsRequestObje
 	}
 
 	query, err := model.NewListQuery(
-		string(request.ItemType),
+		string(request.AssetType),
 		limit,
 		offset,
 		request.Params.Name,
 		request.Params.Creator,
 		license,
-		sortField,
-		sortDesc,
+		[]model.SortDirective{{Field: sortField, Desc: sortDesc}},
 	)
 	if err != nil {
 		return api.ListItems400JSONResponse{Error: err.Error()}, nil
@@ -53,9 +52,6 @@ func (s *Server) ListItems(ctx context.Context, request api.ListItemsRequestObje
 		return nil, fmt.Errorf("list items: %w", err)
 	}
 
-	resp, err := result.ToAPI()
-	if err != nil {
-		return nil, fmt.Errorf("decode list results: %w", err)
-	}
+	resp := result.ToAPI()
 	return api.ListItems200JSONResponse(resp), nil
 }

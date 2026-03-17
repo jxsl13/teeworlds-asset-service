@@ -29,9 +29,6 @@ func (s *Server) SearchItems(ctx context.Context, request api.SearchItemsRequest
 		return nil, fmt.Errorf("search: %w", err)
 	}
 
-	resp, err := result.ToAPI()
-	if err != nil {
-		return nil, fmt.Errorf("decode search results: %w", err)
-	}
+	resp := result.ToAPI()
 	return api.SearchItems200JSONResponse(resp), nil
 }

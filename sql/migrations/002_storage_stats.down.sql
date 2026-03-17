@@ -1,3 +1,3 @@
-DROP TRIGGER IF EXISTS search_item_storage_stats ON search_item;
+DROP TRIGGER IF EXISTS asset_item_storage_stats ON asset_item;
 DROP FUNCTION IF EXISTS storage_stats_update();
 DROP TABLE IF EXISTS storage_stats;

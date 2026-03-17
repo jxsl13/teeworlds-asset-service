@@ -7,7 +7,6 @@ package sql
 import (
 	"database/sql"
 	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -15,94 +14,101 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
-type ItemTypeEnum string
+type AssetTypeEnum string
 
 const (
-	ItemTypeEnumMap      ItemTypeEnum = "map"
-	ItemTypeEnumGameskin ItemTypeEnum = "gameskin"
-	ItemTypeEnumHud      ItemTypeEnum = "hud"
-	ItemTypeEnumSkin     ItemTypeEnum = "skin"
-	ItemTypeEnumEntity   ItemTypeEnum = "entity"
-	ItemTypeEnumTheme    ItemTypeEnum = "theme"
-	ItemTypeEnumTemplate ItemTypeEnum = "template"
-	ItemTypeEnumEmoticon ItemTypeEnum = "emoticon"
+	AssetTypeEnumMap      AssetTypeEnum = "map"
+	AssetTypeEnumGameskin AssetTypeEnum = "gameskin"
+	AssetTypeEnumHud      AssetTypeEnum = "hud"
+	AssetTypeEnumSkin     AssetTypeEnum = "skin"
+	AssetTypeEnumEntity   AssetTypeEnum = "entity"
+	AssetTypeEnumTheme    AssetTypeEnum = "theme"
+	AssetTypeEnumTemplate AssetTypeEnum = "template"
+	AssetTypeEnumEmoticon AssetTypeEnum = "emoticon"
 )
 
-func (e *ItemTypeEnum) Scan(src interface{}) error {
+func (e *AssetTypeEnum) Scan(src interface{}) error {
 	switch s := src.(type) {
 	case []byte:
-		*e = ItemTypeEnum(s)
+		*e = AssetTypeEnum(s)
 	case string:
-		*e = ItemTypeEnum(s)
+		*e = AssetTypeEnum(s)
 	default:
-		return fmt.Errorf("unsupported scan type for ItemTypeEnum: %T", src)
+		return fmt.Errorf("unsupported scan type for AssetTypeEnum: %T", src)
 	}
 	return nil
 }
 
-type NullItemTypeEnum struct {
-	ItemTypeEnum ItemTypeEnum
-	Valid        bool // Valid is true if ItemTypeEnum is not NULL
+type NullAssetTypeEnum struct {
+	AssetTypeEnum AssetTypeEnum
+	Valid         bool // Valid is true if AssetTypeEnum is not NULL
 }
 
 // Scan implements the Scanner interface.
-func (ns *NullItemTypeEnum) Scan(value interface{}) error {
+func (ns *NullAssetTypeEnum) Scan(value interface{}) error {
 	if value == nil {
-		ns.ItemTypeEnum, ns.Valid = "", false
+		ns.AssetTypeEnum, ns.Valid = "", false
 		return nil
 	}
 	ns.Valid = true
-	return ns.ItemTypeEnum.Scan(value)
+	return ns.AssetTypeEnum.Scan(value)
 }
 
 // Value implements the driver Valuer interface.
-func (ns NullItemTypeEnum) Value() (driver.Value, error) {
+func (ns NullAssetTypeEnum) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
 	}
-	return string(ns.ItemTypeEnum), nil
+	return string(ns.AssetTypeEnum), nil
 }
 
-func (e ItemTypeEnum) Valid() bool {
+func (e AssetTypeEnum) Valid() bool {
 	switch e {
-	case ItemTypeEnumMap,
-		ItemTypeEnumGameskin,
-		ItemTypeEnumHud,
-		ItemTypeEnumSkin,
-		ItemTypeEnumEntity,
-		ItemTypeEnumTheme,
-		ItemTypeEnumTemplate,
-		ItemTypeEnumEmoticon:
+	case AssetTypeEnumMap,
+		AssetTypeEnumGameskin,
+		AssetTypeEnumHud,
+		AssetTypeEnumSkin,
+		AssetTypeEnumEntity,
+		AssetTypeEnumTheme,
+		AssetTypeEnumTemplate,
+		AssetTypeEnumEmoticon:
 		return true
 	}
 	return false
 }
 
-func AllItemTypeEnumValues() []ItemTypeEnum {
-	return []ItemTypeEnum{
-		ItemTypeEnumMap,
-		ItemTypeEnumGameskin,
-		ItemTypeEnumHud,
-		ItemTypeEnumSkin,
-		ItemTypeEnumEntity,
-		ItemTypeEnumTheme,
-		ItemTypeEnumTemplate,
-		ItemTypeEnumEmoticon,
+func AllAssetTypeEnumValues() []AssetTypeEnum {
+	return []AssetTypeEnum{
+		AssetTypeEnumMap,
+		AssetTypeEnumGameskin,
+		AssetTypeEnumHud,
+		AssetTypeEnumSkin,
+		AssetTypeEnumEntity,
+		AssetTypeEnumTheme,
+		AssetTypeEnumTemplate,
+		AssetTypeEnumEmoticon,
 	}
 }
 
-type SearchItem struct {
-	ItemID            uuid.UUID       `db:"item_id"`
-	ItemType          ItemTypeEnum    `db:"item_type"`
-	Size              int64           `db:"size"`
-	Checksum          string          `db:"checksum"`
-	ItemFilePath      string          `db:"item_file_path"`
-	ItemThumbnailPath sql.NullString  `db:"item_thumbnail_path"`
-	ItemValue         json.RawMessage `db:"item_value"`
-	OriginalFilename  string          `db:"original_filename"`
+type AssetGroup struct {
+	GroupID   uuid.UUID     `db:"group_id"`
+	AssetType AssetTypeEnum `db:"asset_type"`
+	GroupName string        `db:"group_name"`
+	GroupKey  string        `db:"group_key"`
 }
 
-type SearchItemMetadatum struct {
+type AssetItem struct {
+	GroupID           uuid.UUID      `db:"group_id"`
+	ItemID            uuid.UUID      `db:"item_id"`
+	GroupValue        string         `db:"group_value"`
+	Size              int64          `db:"size"`
+	Checksum          string         `db:"checksum"`
+	ItemFilePath      string         `db:"item_file_path"`
+	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
+	OriginalFilename  string         `db:"original_filename"`
+}
+
+type AssetItemMetadatum struct {
 	ItemID         uuid.UUID   `db:"item_id"`
 	CreatedAt      time.Time   `db:"created_at"`
 	CreatorIp      pqtype.Inet `db:"creator_ip"`
@@ -114,7 +120,7 @@ type SearchItemMetadatum struct {
 }
 
 type SearchValue struct {
-	ItemID   uuid.UUID `db:"item_id"`
+	GroupID  uuid.UUID `db:"group_id"`
 	KeyName  string    `db:"key_name"`
 	KeyValue string    `db:"key_value"`
 }
