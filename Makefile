@@ -1,5 +1,5 @@
 
-.PHONY: generate build db-reset db-up db-down test
+.PHONY: generate build db-reset db-up db-down test seed
 
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yaml --env-file docker/dev.env
 
@@ -26,6 +26,10 @@ db-reset:
 
 test:
 	set -a && . docker/dev.env && set +a && go test ./...
+
+# seed uploads procedurally generated assets to a running local instance.
+seed:
+	go run ./cmd/seed
 
 generate:
 	go generate ./...

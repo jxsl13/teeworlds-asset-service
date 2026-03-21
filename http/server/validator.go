@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/png"
 	"os"
+	"strings"
 
 	"github.com/jxsl13/asset-service/config"
 	"github.com/jxsl13/asset-service/http/api"
@@ -119,8 +120,14 @@ func (v *Validator) validatePNG(tmpDir *os.Root, tmpName string, itemType string
 	}
 
 	if !v.IsAllowedResolution(itemType, pngCfg.Width, pngCfg.Height) {
+		allowed := v.types[itemType].Resolutions
+		list := make([]string, len(allowed))
+		for i, r := range allowed {
+			list[i] = fmt.Sprintf("%dx%d", r.Width, r.Height)
+		}
 		return &api.ErrorResponse{
-			Error: fmt.Sprintf("resolution %dx%d is not allowed for item type %q", pngCfg.Width, pngCfg.Height, itemType),
+			Error: fmt.Sprintf("resolution %dx%d is not allowed for item type %q (allowed: %s)",
+				pngCfg.Width, pngCfg.Height, itemType, strings.Join(list, ", ")),
 		}, ""
 	}
 	return nil, fmt.Sprintf("%dx%d", pngCfg.Width, pngCfg.Height)

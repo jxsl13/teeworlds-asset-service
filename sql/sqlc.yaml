@@ -6,10 +6,13 @@ sql:
       "queries/insert.sql",
       "queries/get.sql",
       "queries/list.sql",
+      "queries/admin.sql",
+      "queries/kv.sql",
     ]
     schema: [
       "migrations/001_schema.up.sql",
       "migrations/002_storage_stats.up.sql",
+      "migrations/003_kv_store.up.sql",
     ]
     gen:
       go:

@@ -1,0 +1,9 @@
+{
+	# Use an internal self-signed CA for localhost TLS.
+	# Browsers will show a certificate warning on first visit — accept it once.
+	local_certs
+}
+
+https://localhost:1411 {
+	reverse_proxy pocket-id:1411
+}

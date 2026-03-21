@@ -119,6 +119,11 @@ type AssetItemMetadatum struct {
 	RequestID      string      `db:"request_id"`
 }
 
+type KvStore struct {
+	Key   string `db:"key"`
+	Value string `db:"value"`
+}
+
 type SearchValue struct {
 	GroupID  uuid.UUID `db:"group_id"`
 	KeyName  string    `db:"key_name"`

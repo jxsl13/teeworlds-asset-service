@@ -13,6 +13,7 @@ services:
       - "127.0.0.1:${DB_PORT}:5432"
     volumes:
       - ../volumes/postgresql/data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
@@ -35,5 +36,46 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  pocket-id:
+    image: ghcr.io/pocket-id/pocket-id:latest
+    restart: unless-stopped
+    environment:
+      # APP_URL must match the caddy HTTPS URL that users open.
+      APP_URL: https://localhost:1411
+      TRUST_PROXY: "true"
+      ENCRYPTION_KEY: ${POCKET_ID_ENCRYPTION_KEY:-dev-encryption-key-min16}
+      DB_CONNECTION_STRING: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/pocketid?sslmode=disable
+      STATIC_API_KEY: ${POCKET_ID_STATIC_API_KEY:-}
+      ANALYTICS_DISABLED: "true"
+      VERSION_CHECK_DISABLED: "true"
+    # No host port — only reachable via the caddy reverse proxy.
+    expose:
+      - "1411"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # HTTPS reverse proxy for Pocket-ID.
+  # Pocket-ID always sets Secure cookies, so a TLS-terminating
+  # proxy is required for browsers to accept them over localhost.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1411:1411"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - pocket-id
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--no-check-certificate", "-q", "https://localhost:1411/.well-known/openid-configuration"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  caddy_data:
 
 

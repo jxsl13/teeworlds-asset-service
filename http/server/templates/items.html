@@ -13,12 +13,13 @@
       </th>
       {{end}}
       <th class="col-actions">Downloads</th>
+      {{if $.IsAdmin}}<th class="col-admin">Admin</th>{{end}}
     </tr>
   </thead>
   <tbody>
   {{if .Items}}
     {{range .Items}}
-    <tr data-type="{{.ItemType}}">
+    <tr data-type="{{.ItemType}}" data-group-id="{{.GroupID}}">
       <td class="col-thumb">
         {{if .HasThumbnail}}
         <img src="/api/{{.ItemType}}/{{.GroupID}}/thumbnail" alt="{{.Name}}" loading="lazy" onclick="openPreview(this.src)">
@@ -54,10 +55,17 @@
             </svg>
           </a>{{end}}
       </td>
+      {{if $.IsAdmin}}
+      <td class="col-admin">
+        <button class="btn-admin btn-info" onclick="openMetadataModal('{{.ItemType}}', '{{.GroupID}}', '{{.Name}}')" title="Item metadata">&#9432;</button>
+        <button class="btn-admin btn-edit" onclick="openEditModal('{{.ItemType}}', '{{.GroupID}}', '{{.Name}}', '{{.Creators}}')" title="Edit">&#9998;</button>
+        <button class="btn-admin btn-delete" onclick="adminDeleteGroup('{{.ItemType}}', '{{.GroupID}}', '{{.Name}}')" title="Delete group">&times;</button>
+      </td>
+      {{end}}
     </tr>
     {{end}}
   {{else}}
-    <tr><td colspan="6" class="empty-state">No items found.</td></tr>
+    <tr><td colspan="{{if $.IsAdmin}}7{{else}}6{{end}}" class="empty-state">No items found.</td></tr>
   {{end}}
   </tbody>
 </table>

@@ -42,7 +42,8 @@ JOIN (
         ) AS sml
     FROM  search_value sv
     LEFT JOIN search_value_weight sw ON sv.key_name = sw.key_name
-    WHERE key_value ~* $1
+    WHERE (length($1) >= 3 AND key_value ~* $1)
+       OR (length($1) <  3 AND sv.key_name <> 'license' AND lower(key_value) LIKE '%' || lower($1) || '%')
     GROUP BY sv.group_id
 ) AS sm ON ag.group_id = sm.group_id
 ORDER BY sm.sml DESC
@@ -136,7 +137,8 @@ JOIN (
         ) AS sml
     FROM  search_value sv
     LEFT JOIN search_value_weight sw ON sv.key_name = sw.key_name
-    WHERE key_value ~* $1
+    WHERE (length($1) >= 3 AND key_value ~* $1)
+       OR (length($1) <  3 AND sv.key_name <> 'license' AND lower(key_value) LIKE '%' || lower($1) || '%')
     GROUP BY sv.group_id
 ) AS sm ON ag.group_id = sm.group_id
 WHERE ag.asset_type = $4

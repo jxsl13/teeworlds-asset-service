@@ -66,6 +66,37 @@ type Config struct {
 	//   skin → 64×64
 	//   others → smallest allowed resolution
 	ThumbnailSizes map[string]Resolution
+
+	// OIDC / Pocket-ID configuration.
+	// All fields are optional — when OIDCIssuerURL is empty, auth is disabled.
+	OIDCIssuerURL             string // Env: OIDC_ISSUER_URL
+	OIDCClientID              string // Env: OIDC_CLIENT_ID
+	OIDCClientSecret          string // Env: OIDC_CLIENT_SECRET
+	OIDCRedirectURL           string // Env: OIDC_REDIRECT_URL
+	OIDCPostLogoutRedirectURL string // Env: OIDC_POST_LOGOUT_REDIRECT_URL
+
+	// Insecure disables secure cookies (HTTPS requirement) for OIDC sessions.
+	// Env: INSECURE (default: false — set to "true" for local HTTP dev)
+	Insecure bool
+
+	// PocketIDStaticAPIKey is the admin API key for auto-provisioning Pocket-ID.
+	// When set (together with OIDCIssuerURL), the service provisions the OIDC
+	// client, admin group, admin user and prints a one-time login URL at startup.
+	// Env: POCKET_ID_STATIC_API_KEY
+	PocketIDStaticAPIKey string
+
+	// PocketIDAdminEmail is the email for the initial Pocket-ID admin user.
+	// Env: POCKET_ID_ADMIN_EMAIL (default: admin@example.com)
+	PocketIDAdminEmail string
+
+	// PocketIDClientName is the display name for the OIDC client in Pocket-ID.
+	// Env: POCKET_ID_CLIENT_NAME (default: "Asset Service")
+	PocketIDClientName string
+
+	// PocketIDEncryptionKey is the passphrase for encrypting OIDC credentials
+	// stored in the database. Required when PocketIDStaticAPIKey is set.
+	// Env: POCKET_ID_ENCRYPTION_KEY
+	PocketIDEncryptionKey string
 }
 
 // Load reads configuration from environment variables, validates required
@@ -81,6 +112,18 @@ func Load() (Config, error) {
 		Addr:           os.Getenv("ADDR"),
 		StoragePath:    os.Getenv("STORAGE_PATH"),
 		TempUploadPath: os.Getenv("TEMP_UPLOAD_PATH"),
+
+		OIDCIssuerURL:             os.Getenv("OIDC_ISSUER_URL"),
+		OIDCClientID:              os.Getenv("OIDC_CLIENT_ID"),
+		OIDCClientSecret:          os.Getenv("OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:           os.Getenv("OIDC_REDIRECT_URL"),
+		OIDCPostLogoutRedirectURL: os.Getenv("OIDC_POST_LOGOUT_REDIRECT_URL"),
+		Insecure:                  os.Getenv("INSECURE") == "true",
+
+		PocketIDStaticAPIKey:  os.Getenv("POCKET_ID_STATIC_API_KEY"),
+		PocketIDAdminEmail:    os.Getenv("POCKET_ID_ADMIN_EMAIL"),
+		PocketIDClientName:    os.Getenv("POCKET_ID_CLIENT_NAME"),
+		PocketIDEncryptionKey: os.Getenv("POCKET_ID_ENCRYPTION_KEY"),
 	}
 
 	var missing []string
@@ -110,6 +153,12 @@ func Load() (Config, error) {
 	}
 	if cfg.TempUploadPath == "" {
 		cfg.TempUploadPath = os.TempDir()
+	}
+	if cfg.PocketIDAdminEmail == "" {
+		cfg.PocketIDAdminEmail = "admin@example.com"
+	}
+	if cfg.PocketIDClientName == "" {
+		cfg.PocketIDClientName = "Asset Service"
 	}
 
 	const defaultMaxStorageSize = 1 * 1024 * 1024 * 1024 // 1 GiB

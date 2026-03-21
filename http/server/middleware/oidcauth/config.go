@@ -39,6 +39,9 @@ type Config struct {
 	// EnablePKCE enables Proof Key for Code Exchange (S256). Defaults to true.
 	EnablePKCE bool
 
+	// Insecure skips TLS certificate verification (for self-signed dev certs).
+	Insecure bool
+
 	// LoginPath is the path that initiates the OIDC flow. Defaults to "/auth/login".
 	LoginPath string
 

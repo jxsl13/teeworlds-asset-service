@@ -25,6 +25,20 @@ type DAO interface {
 	InsertItemChecked(ctx context.Context, arg InsertItemParams) error
 	InsertItemMetadata(ctx context.Context, arg InsertItemMetadataParams) error
 	InsertSearchValue(ctx context.Context, arg InsertSearchValueParams) error
+
+	// Admin operations
+	DeleteGroup(ctx context.Context, arg DeleteGroupParams) error
+	DeleteItem(ctx context.Context, arg DeleteItemParams) error
+	UpdateGroupName(ctx context.Context, arg UpdateGroupNameParams) error
+	DeleteSearchValues(ctx context.Context, arg DeleteSearchValuesParams) error
+	GetGroupInfo(ctx context.Context, arg GetGroupInfoParams) (AssetGroup, error)
+	GetItemInfo(ctx context.Context, arg GetItemInfoParams) (GetItemInfoRow, error)
+	GetGroupItemPaths(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemPathsRow, error)
+	GetGroupItems(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemsRow, error)
+	GetGroupItemsWithMetadata(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemsWithMetadataRow, error)
+	UpdateItem(ctx context.Context, arg UpdateItemParams) error
+	CountGroupItems(ctx context.Context, groupID uuid.UUID) (int64, error)
+
 	// Tx runs fn inside a single database transaction.
 	// The transaction is committed when fn returns nil, rolled back otherwise.
 	Tx(ctx context.Context, fn func(tx DAO) error) error
@@ -98,6 +112,50 @@ func (d *dao) InsertItemMetadata(ctx context.Context, arg InsertItemMetadataPara
 
 func (d *dao) InsertSearchValue(ctx context.Context, arg InsertSearchValueParams) error {
 	return d.q.InsertSearchValue(ctx, arg)
+}
+
+func (d *dao) DeleteGroup(ctx context.Context, arg DeleteGroupParams) error {
+	return d.q.DeleteGroup(ctx, arg)
+}
+
+func (d *dao) DeleteItem(ctx context.Context, arg DeleteItemParams) error {
+	return d.q.DeleteItem(ctx, arg)
+}
+
+func (d *dao) UpdateGroupName(ctx context.Context, arg UpdateGroupNameParams) error {
+	return d.q.UpdateGroupName(ctx, arg)
+}
+
+func (d *dao) DeleteSearchValues(ctx context.Context, arg DeleteSearchValuesParams) error {
+	return d.q.DeleteSearchValues(ctx, arg)
+}
+
+func (d *dao) GetGroupInfo(ctx context.Context, arg GetGroupInfoParams) (AssetGroup, error) {
+	return d.q.GetGroupInfo(ctx, arg)
+}
+
+func (d *dao) GetItemInfo(ctx context.Context, arg GetItemInfoParams) (GetItemInfoRow, error) {
+	return d.q.GetItemInfo(ctx, arg)
+}
+
+func (d *dao) GetGroupItemPaths(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemPathsRow, error) {
+	return d.q.GetGroupItemPaths(ctx, groupID)
+}
+
+func (d *dao) GetGroupItems(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemsRow, error) {
+	return d.q.GetGroupItems(ctx, groupID)
+}
+
+func (d *dao) GetGroupItemsWithMetadata(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemsWithMetadataRow, error) {
+	return d.q.GetGroupItemsWithMetadata(ctx, groupID)
+}
+
+func (d *dao) UpdateItem(ctx context.Context, arg UpdateItemParams) error {
+	return d.q.UpdateItem(ctx, arg)
+}
+
+func (d *dao) CountGroupItems(ctx context.Context, groupID uuid.UUID) (int64, error) {
+	return d.q.CountGroupItems(ctx, groupID)
 }
 
 func (d *dao) Tx(ctx context.Context, fn func(tx DAO) error) error {

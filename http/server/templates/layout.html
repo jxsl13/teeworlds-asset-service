@@ -39,6 +39,10 @@
                  value="{{.Query}}">
         </div>
         <button class="btn-upload" onclick="openUpload()">&#x2B; Upload</button>
+        {{if .UserName}}
+        <span class="user-badge" title="Logged in as {{.UserName}}">{{.UserName}}</span>
+        <a href="/auth/logout?return_to=/{{.ActiveType}}" class="btn-auth">Logout</a>
+        {{end}}
       </div>
     </div>
   </div>
@@ -74,6 +78,54 @@
   <div class="preview-backdrop" id="previewModal" onclick="closePreview()">
     <img id="previewImg" src="" alt="Preview">
   </div>
+
+  <!-- Item Metadata Modal (admin only) -->
+  <div class="modal-backdrop" id="metadataModal">
+    <div class="modal" style="max-width:800px;max-height:90vh;overflow-y:auto;">
+      <button class="modal-close" onclick="closeMetadataModal()">&times;</button>
+      <h2>Metadata &mdash; <span id="metadataGroupName"></span></h2>
+      <div id="metadataContent"><span class="upload-status">Loading&hellip;</span></div>
+    </div>
+  </div>
+
+  <!-- Edit Group Modal (admin only) -->
+  <div class="modal-backdrop" id="editModal">
+    <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto;">
+      <button class="modal-close" onclick="closeEditModal()">&times;</button>
+      <h2>Edit <span id="editTypeLabel"></span></h2>
+
+      <input type="hidden" id="editAssetType">
+      <input type="hidden" id="editGroupID">
+
+      <div class="upload-group" id="editGroupCard">
+        <div class="upload-group-header">
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" id="editName" class="ui-name" placeholder="Group name">
+          </div>
+          <div class="form-group">
+            <label>Creators</label>
+            <div class="tag-input" id="editCreatorsTag"><input type="text" placeholder="Type name, press Enter"></div>
+          </div>
+        </div>
+
+        <label class="edit-items-label">Variants</label>
+        <div class="upload-group-files" id="editItemsList">
+          <span class="upload-status">Loading&hellip;</span>
+        </div>
+
+        <input type="file" id="edit-add-files" multiple accept=".png,.map" style="display:none" onchange="onEditFilesSelected(this)">
+        <label class="btn-add-files" onclick="document.getElementById('edit-add-files').click()">+ Add variants</label>
+      </div>
+
+      <button type="button" class="btn-submit" onclick="submitEdit()">Save Changes</button>
+      <div class="upload-status" id="editStatus"></div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    {{if not .UserName}}<a href="/auth/login">Login</a>{{end}}
+  </footer>
 
   <script>
     var activeType = '{{.ActiveType}}';

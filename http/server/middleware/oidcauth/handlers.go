@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -125,21 +126,27 @@ func (p *Provider) CallbackHandler() http.HandlerFunc {
 	}
 }
 
-// LogoutHandler clears the local session and redirects to Pocket ID's end-session endpoint.
+// LogoutHandler clears the local session and redirects back to the page
+// the user was on. This is a local-only logout — it does not redirect to
+// the identity provider. The user keeps their Pocket-ID session but is
+// logged out of this application.
 func (p *Provider) LogoutHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Destroy local session
+		// Destroy local session.
 		if cookie, err := r.Cookie(p.config.SessionCookieName); err == nil {
 			p.store.delete(cookie.Value)
 		}
 		clearSessionCookie(w, p.config.SessionCookieName, p.config.CookieDomain)
 
-		// Redirect to Pocket ID end-session endpoint
-		logoutURL := fmt.Sprintf("%s/api/oidc/end-session", p.config.IssuerURL)
-		if p.config.PostLogoutRedirectURL != "" {
-			logoutURL += fmt.Sprintf("?post_logout_redirect_uri=%s", p.config.PostLogoutRedirectURL)
+		// Redirect back to the page the user came from (default: /).
+		target := "/"
+		if returnTo := r.URL.Query().Get("return_to"); returnTo != "" {
+			// Only accept relative paths to prevent open redirect.
+			if strings.HasPrefix(returnTo, "/") {
+				target = returnTo
+			}
 		}
-		http.Redirect(w, r, logoutURL, http.StatusFound)
+		http.Redirect(w, r, target, http.StatusFound)
 	}
 }
 

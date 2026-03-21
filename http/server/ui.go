@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/http/server/middleware/oidcauth"
 	"github.com/jxsl13/asset-service/model"
 	sqlc "github.com/jxsl13/asset-service/sql"
 )
@@ -30,6 +31,8 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 		"ItemTypes":  types,
 		"ActiveType": types[0],
 		"Query":      "",
+		"IsAdmin":    isAdmin(ctx),
+		"UserName":   userName(ctx),
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}
@@ -145,6 +148,7 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 		NextURL:   fmt.Sprintf("%s?limit=%d&offset=%d%s%s", baseURL, limit, offset+limit, qParam, sortQParam),
 		SortParam: sortParam,
 		Columns:   columns,
+		IsAdmin:   isAdmin(ctx),
 	}
 
 	var buf bytes.Buffer
@@ -172,12 +176,12 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 
 	// Direct browser navigation (not HTMX) — render the full page layout
 	// with the correct tab pre-selected so the content loads on page init.
-	return s.renderFullPage(itemType, q)
+	return s.renderFullPage(ctx, itemType, q)
 }
 
 // renderFullPage renders the complete layout HTML with the given item type
 // pre-selected. Used when /{asset_type} is accessed via direct browser navigation.
-func (s *Server) renderFullPage(activeType, query string) (api.RenderItemListResponseObject, error) {
+func (s *Server) renderFullPage(ctx context.Context, activeType, query string) (api.RenderItemListResponseObject, error) {
 	allEnums := sqlc.AllAssetTypeEnumValues()
 	types := make([]string, 0, len(allEnums))
 	for _, e := range allEnums {
@@ -190,6 +194,8 @@ func (s *Server) renderFullPage(activeType, query string) (api.RenderItemListRes
 		"ItemTypes":  types,
 		"ActiveType": activeType,
 		"Query":      query,
+		"IsAdmin":    isAdmin(ctx),
+		"UserName":   userName(ctx),
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}
@@ -239,6 +245,7 @@ type itemsPageData struct {
 	NextURL   string
 	SortParam string       // raw sort param to preserve in pagination links
 	Columns   []sortColumn // columns for header rendering
+	IsAdmin   bool         // true when the current user has the "admin" group
 }
 
 // parseVariants splits the DB-aggregated "uuid:value,uuid:value,…" string
@@ -378,4 +385,23 @@ func buildSortParam(dirs []model.SortDirective) string {
 		parts = append(parts, d.Field+":"+dir)
 	}
 	return strings.Join(parts, ",")
+}
+
+// isAdmin returns true if the request context contains an authenticated user
+// who belongs to the "admin" Pocket-ID group.
+func isAdmin(ctx context.Context) bool {
+	claims := oidcauth.ClaimsFromContext(ctx)
+	return claims != nil && claims.HasGroup("admin")
+}
+
+// userName returns the display name of the authenticated user, or "".
+func userName(ctx context.Context) string {
+	claims := oidcauth.ClaimsFromContext(ctx)
+	if claims == nil {
+		return ""
+	}
+	if claims.Name != "" {
+		return claims.Name
+	}
+	return claims.PreferredUsername
 }

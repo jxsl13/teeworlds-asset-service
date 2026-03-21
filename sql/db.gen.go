@@ -24,6 +24,18 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.countGroupItemsStmt, err = db.PrepareContext(ctx, countGroupItems); err != nil {
+		return nil, fmt.Errorf("error preparing query CountGroupItems: %w", err)
+	}
+	if q.deleteGroupStmt, err = db.PrepareContext(ctx, deleteGroup); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteGroup: %w", err)
+	}
+	if q.deleteItemStmt, err = db.PrepareContext(ctx, deleteItem); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteItem: %w", err)
+	}
+	if q.deleteSearchValuesStmt, err = db.PrepareContext(ctx, deleteSearchValues); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteSearchValues: %w", err)
+	}
 	if q.getGroupFilePathStmt, err = db.PrepareContext(ctx, getGroupFilePath); err != nil {
 		return nil, fmt.Errorf("error preparing query GetGroupFilePath: %w", err)
 	}
@@ -32,6 +44,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getGroupIDStmt, err = db.PrepareContext(ctx, getGroupID); err != nil {
 		return nil, fmt.Errorf("error preparing query GetGroupID: %w", err)
+	}
+	if q.getGroupInfoStmt, err = db.PrepareContext(ctx, getGroupInfo); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupInfo: %w", err)
+	}
+	if q.getGroupItemPathsStmt, err = db.PrepareContext(ctx, getGroupItemPaths); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupItemPaths: %w", err)
+	}
+	if q.getGroupItemsStmt, err = db.PrepareContext(ctx, getGroupItems); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupItems: %w", err)
+	}
+	if q.getGroupItemsWithMetadataStmt, err = db.PrepareContext(ctx, getGroupItemsWithMetadata); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGroupItemsWithMetadata: %w", err)
 	}
 	if q.getGroupThumbnailPathStmt, err = db.PrepareContext(ctx, getGroupThumbnailPath); err != nil {
 		return nil, fmt.Errorf("error preparing query GetGroupThumbnailPath: %w", err)
@@ -42,8 +66,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getItemFilePathStmt, err = db.PrepareContext(ctx, getItemFilePath); err != nil {
 		return nil, fmt.Errorf("error preparing query GetItemFilePath: %w", err)
 	}
+	if q.getItemInfoStmt, err = db.PrepareContext(ctx, getItemInfo); err != nil {
+		return nil, fmt.Errorf("error preparing query GetItemInfo: %w", err)
+	}
 	if q.getItemThumbnailPathStmt, err = db.PrepareContext(ctx, getItemThumbnailPath); err != nil {
 		return nil, fmt.Errorf("error preparing query GetItemThumbnailPath: %w", err)
+	}
+	if q.getKVStmt, err = db.PrepareContext(ctx, getKV); err != nil {
+		return nil, fmt.Errorf("error preparing query GetKV: %w", err)
 	}
 	if q.insertItemStmt, err = db.PrepareContext(ctx, insertItem); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertItem: %w", err)
@@ -63,14 +93,43 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.searchByTypeStmt, err = db.PrepareContext(ctx, searchByType); err != nil {
 		return nil, fmt.Errorf("error preparing query SearchByType: %w", err)
 	}
+	if q.updateGroupNameStmt, err = db.PrepareContext(ctx, updateGroupName); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateGroupName: %w", err)
+	}
+	if q.updateItemStmt, err = db.PrepareContext(ctx, updateItem); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateItem: %w", err)
+	}
 	if q.upsertGroupStmt, err = db.PrepareContext(ctx, upsertGroup); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertGroup: %w", err)
+	}
+	if q.upsertKVStmt, err = db.PrepareContext(ctx, upsertKV); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertKV: %w", err)
 	}
 	return &q, nil
 }
 
 func (q *Queries) Close() error {
 	var err error
+	if q.countGroupItemsStmt != nil {
+		if cerr := q.countGroupItemsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countGroupItemsStmt: %w", cerr)
+		}
+	}
+	if q.deleteGroupStmt != nil {
+		if cerr := q.deleteGroupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteGroupStmt: %w", cerr)
+		}
+	}
+	if q.deleteItemStmt != nil {
+		if cerr := q.deleteItemStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteItemStmt: %w", cerr)
+		}
+	}
+	if q.deleteSearchValuesStmt != nil {
+		if cerr := q.deleteSearchValuesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteSearchValuesStmt: %w", cerr)
+		}
+	}
 	if q.getGroupFilePathStmt != nil {
 		if cerr := q.getGroupFilePathStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getGroupFilePathStmt: %w", cerr)
@@ -84,6 +143,26 @@ func (q *Queries) Close() error {
 	if q.getGroupIDStmt != nil {
 		if cerr := q.getGroupIDStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getGroupIDStmt: %w", cerr)
+		}
+	}
+	if q.getGroupInfoStmt != nil {
+		if cerr := q.getGroupInfoStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupInfoStmt: %w", cerr)
+		}
+	}
+	if q.getGroupItemPathsStmt != nil {
+		if cerr := q.getGroupItemPathsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupItemPathsStmt: %w", cerr)
+		}
+	}
+	if q.getGroupItemsStmt != nil {
+		if cerr := q.getGroupItemsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupItemsStmt: %w", cerr)
+		}
+	}
+	if q.getGroupItemsWithMetadataStmt != nil {
+		if cerr := q.getGroupItemsWithMetadataStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGroupItemsWithMetadataStmt: %w", cerr)
 		}
 	}
 	if q.getGroupThumbnailPathStmt != nil {
@@ -101,9 +180,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getItemFilePathStmt: %w", cerr)
 		}
 	}
+	if q.getItemInfoStmt != nil {
+		if cerr := q.getItemInfoStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getItemInfoStmt: %w", cerr)
+		}
+	}
 	if q.getItemThumbnailPathStmt != nil {
 		if cerr := q.getItemThumbnailPathStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getItemThumbnailPathStmt: %w", cerr)
+		}
+	}
+	if q.getKVStmt != nil {
+		if cerr := q.getKVStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getKVStmt: %w", cerr)
 		}
 	}
 	if q.insertItemStmt != nil {
@@ -136,9 +225,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing searchByTypeStmt: %w", cerr)
 		}
 	}
+	if q.updateGroupNameStmt != nil {
+		if cerr := q.updateGroupNameStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateGroupNameStmt: %w", cerr)
+		}
+	}
+	if q.updateItemStmt != nil {
+		if cerr := q.updateItemStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateItemStmt: %w", cerr)
+		}
+	}
 	if q.upsertGroupStmt != nil {
 		if cerr := q.upsertGroupStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing upsertGroupStmt: %w", cerr)
+		}
+	}
+	if q.upsertKVStmt != nil {
+		if cerr := q.upsertKVStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertKVStmt: %w", cerr)
 		}
 	}
 	return err
@@ -178,41 +282,67 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                        DBTX
-	tx                        *sql.Tx
-	getGroupFilePathStmt      *sql.Stmt
-	getGroupFilesStmt         *sql.Stmt
-	getGroupIDStmt            *sql.Stmt
-	getGroupThumbnailPathStmt *sql.Stmt
-	getItemByChecksumStmt     *sql.Stmt
-	getItemFilePathStmt       *sql.Stmt
-	getItemThumbnailPathStmt  *sql.Stmt
-	insertItemStmt            *sql.Stmt
-	insertItemMetadataStmt    *sql.Stmt
-	insertSearchValueStmt     *sql.Stmt
-	listItemsStmt             *sql.Stmt
-	searchStmt                *sql.Stmt
-	searchByTypeStmt          *sql.Stmt
-	upsertGroupStmt           *sql.Stmt
+	db                            DBTX
+	tx                            *sql.Tx
+	countGroupItemsStmt           *sql.Stmt
+	deleteGroupStmt               *sql.Stmt
+	deleteItemStmt                *sql.Stmt
+	deleteSearchValuesStmt        *sql.Stmt
+	getGroupFilePathStmt          *sql.Stmt
+	getGroupFilesStmt             *sql.Stmt
+	getGroupIDStmt                *sql.Stmt
+	getGroupInfoStmt              *sql.Stmt
+	getGroupItemPathsStmt         *sql.Stmt
+	getGroupItemsStmt             *sql.Stmt
+	getGroupItemsWithMetadataStmt *sql.Stmt
+	getGroupThumbnailPathStmt     *sql.Stmt
+	getItemByChecksumStmt         *sql.Stmt
+	getItemFilePathStmt           *sql.Stmt
+	getItemInfoStmt               *sql.Stmt
+	getItemThumbnailPathStmt      *sql.Stmt
+	getKVStmt                     *sql.Stmt
+	insertItemStmt                *sql.Stmt
+	insertItemMetadataStmt        *sql.Stmt
+	insertSearchValueStmt         *sql.Stmt
+	listItemsStmt                 *sql.Stmt
+	searchStmt                    *sql.Stmt
+	searchByTypeStmt              *sql.Stmt
+	updateGroupNameStmt           *sql.Stmt
+	updateItemStmt                *sql.Stmt
+	upsertGroupStmt               *sql.Stmt
+	upsertKVStmt                  *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                        tx,
-		tx:                        tx,
-		getGroupFilePathStmt:      q.getGroupFilePathStmt,
-		getGroupFilesStmt:         q.getGroupFilesStmt,
-		getGroupIDStmt:            q.getGroupIDStmt,
-		getGroupThumbnailPathStmt: q.getGroupThumbnailPathStmt,
-		getItemByChecksumStmt:     q.getItemByChecksumStmt,
-		getItemFilePathStmt:       q.getItemFilePathStmt,
-		getItemThumbnailPathStmt:  q.getItemThumbnailPathStmt,
-		insertItemStmt:            q.insertItemStmt,
-		insertItemMetadataStmt:    q.insertItemMetadataStmt,
-		insertSearchValueStmt:     q.insertSearchValueStmt,
-		listItemsStmt:             q.listItemsStmt,
-		searchStmt:                q.searchStmt,
-		searchByTypeStmt:          q.searchByTypeStmt,
-		upsertGroupStmt:           q.upsertGroupStmt,
+		db:                            tx,
+		tx:                            tx,
+		countGroupItemsStmt:           q.countGroupItemsStmt,
+		deleteGroupStmt:               q.deleteGroupStmt,
+		deleteItemStmt:                q.deleteItemStmt,
+		deleteSearchValuesStmt:        q.deleteSearchValuesStmt,
+		getGroupFilePathStmt:          q.getGroupFilePathStmt,
+		getGroupFilesStmt:             q.getGroupFilesStmt,
+		getGroupIDStmt:                q.getGroupIDStmt,
+		getGroupInfoStmt:              q.getGroupInfoStmt,
+		getGroupItemPathsStmt:         q.getGroupItemPathsStmt,
+		getGroupItemsStmt:             q.getGroupItemsStmt,
+		getGroupItemsWithMetadataStmt: q.getGroupItemsWithMetadataStmt,
+		getGroupThumbnailPathStmt:     q.getGroupThumbnailPathStmt,
+		getItemByChecksumStmt:         q.getItemByChecksumStmt,
+		getItemFilePathStmt:           q.getItemFilePathStmt,
+		getItemInfoStmt:               q.getItemInfoStmt,
+		getItemThumbnailPathStmt:      q.getItemThumbnailPathStmt,
+		getKVStmt:                     q.getKVStmt,
+		insertItemStmt:                q.insertItemStmt,
+		insertItemMetadataStmt:        q.insertItemMetadataStmt,
+		insertSearchValueStmt:         q.insertSearchValueStmt,
+		listItemsStmt:                 q.listItemsStmt,
+		searchStmt:                    q.searchStmt,
+		searchByTypeStmt:              q.searchByTypeStmt,
+		updateGroupNameStmt:           q.updateGroupNameStmt,
+		updateItemStmt:                q.updateItemStmt,
+		upsertGroupStmt:               q.upsertGroupStmt,
+		upsertKVStmt:                  q.upsertKVStmt,
 	}
 }

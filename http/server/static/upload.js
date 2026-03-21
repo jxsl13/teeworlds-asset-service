@@ -16,7 +16,7 @@ function closePreview() {
 }
 
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') closePreview();
+  if (e.key === 'Escape') { closePreview(); closeMetadataModal(); }
 
   // Ctrl+K → focus search input
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -527,4 +527,274 @@ function submitAllUploads() {
       }
     });
   });
+}
+
+/* ── Admin functions ───────────────────────────────────────────────────────── */
+
+function adminDeleteGroup(assetType, groupID, name) {
+  if (!confirm('Delete "' + name + '" and all its variants? This cannot be undone.')) return;
+  fetch('/admin/' + assetType + '/' + groupID, { method: 'DELETE' })
+    .then(function (res) {
+      if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
+      var row = document.querySelector('tr[data-group-id="' + groupID + '"]');
+      if (row) row.remove();
+    })
+    .catch(function (err) { alert('Delete failed: ' + err.message); });
+}
+
+/* ── Edit modal state ──────────────────────────────────────────────────────── */
+var editItems = [];      // { item_id, group_value, size, original_filename }
+var editPendingFiles = []; // File objects to upload after save
+var editTagInput = null;
+
+function openEditModal(assetType, groupID, name, creators) {
+  document.getElementById('editAssetType').value = assetType;
+  document.getElementById('editGroupID').value = groupID;
+  document.getElementById('editName').value = name;
+  document.getElementById('editTypeLabel').textContent = assetType;
+  var status = document.getElementById('editStatus');
+  status.textContent = '';
+  status.className = 'upload-status';
+  editItems = [];
+  editPendingFiles = [];
+
+  // Populate creators tag input
+  var tagContainer = document.getElementById('editCreatorsTag');
+  // Remove old chips
+  tagContainer.querySelectorAll('.tag-chip').forEach(function (c) { c.remove(); });
+  var tagInput = tagContainer.querySelector('input');
+  tagInput.value = '';
+  // Add existing creators as chips
+  if (creators) {
+    creators.split(',').forEach(function (c) {
+      c = c.trim();
+      if (c) {
+        tagInput.value = c;
+        commitTag(tagContainer, tagInput);
+      }
+    });
+  }
+  // Init tag input handlers (idempotent — re-init is safe since we clone nothing)
+  if (!editTagInput) {
+    initTagInput(tagContainer);
+    editTagInput = true;
+  }
+
+  // Show modal, then fetch items
+  document.getElementById('editModal').classList.add('open');
+  document.getElementById('editItemsList').innerHTML = '<span class="upload-status">Loading\u2026</span>';
+
+  fetch('/admin/' + assetType + '/' + groupID + '/items')
+    .then(function (res) {
+      if (!res.ok) throw new Error('Failed to load items');
+      return res.json();
+    })
+    .then(function (items) {
+      editItems = items;
+      renderEditItems();
+    })
+    .catch(function (err) {
+      document.getElementById('editItemsList').innerHTML =
+        '<span class="upload-status error">' + escapeHtml(err.message) + '</span>';
+    });
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('open');
+  editItems = [];
+  editPendingFiles = [];
+}
+
+document.getElementById('editModal').addEventListener('click', function (e) {
+  if (e.target === this) closeEditModal();
+});
+
+function renderEditItems() {
+  var area = document.getElementById('editItemsList');
+  area.innerHTML = '';
+
+  // Existing items (from DB)
+  editItems.forEach(function (item) {
+    var chip = document.createElement('span');
+    chip.className = 'upload-file-chip';
+    chip.dataset.itemId = item.item_id;
+    var label = item.group_value || item.original_filename;
+    var sizeStr = formatFileSize(item.size);
+    chip.innerHTML =
+      '<span class="file-name">' + escapeHtml(label) + '</span>' +
+      '<span class="chip-size">' + sizeStr + '</span>' +
+      '<span class="chip-remove" title="Delete variant">&times;</span>';
+    chip.querySelector('.chip-remove').addEventListener('click', function () {
+      deleteEditItem(item.item_id, chip);
+    });
+    area.appendChild(chip);
+  });
+
+  // Pending new files (not yet uploaded)
+  editPendingFiles.forEach(function (entry, idx) {
+    var chip = document.createElement('span');
+    chip.className = 'upload-file-chip pending';
+    chip.dataset.pendingIdx = idx;
+    chip.innerHTML =
+      '<span class="file-name">' + escapeHtml(entry.name) + '</span>' +
+      '<span class="chip-size">new</span>' +
+      '<span class="chip-remove" title="Remove">&times;</span>';
+    chip.querySelector('.chip-remove').addEventListener('click', function () {
+      editPendingFiles.splice(idx, 1);
+      renderEditItems();
+    });
+    area.appendChild(chip);
+  });
+
+  if (editItems.length === 0 && editPendingFiles.length === 0) {
+    area.innerHTML = '<span class="upload-status">No variants</span>';
+  }
+}
+
+function deleteEditItem(itemID, chipEl) {
+  var assetType = document.getElementById('editAssetType').value;
+  var groupID = document.getElementById('editGroupID').value;
+
+  chipEl.classList.add('dragging'); // dim it
+  fetch('/admin/' + assetType + '/' + groupID + '/' + itemID, { method: 'DELETE' })
+    .then(function (res) {
+      if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
+      editItems = editItems.filter(function (it) { return it.item_id !== itemID; });
+      renderEditItems();
+    })
+    .catch(function (err) {
+      chipEl.classList.remove('dragging');
+      alert('Delete failed: ' + err.message);
+    });
+}
+
+function onEditFilesSelected(input) {
+  var files = Array.from(input.files);
+  input.value = '';
+  files.forEach(function (f) {
+    editPendingFiles.push(f);
+  });
+  renderEditItems();
+}
+
+function submitEdit() {
+  var assetType = document.getElementById('editAssetType').value;
+  var groupID = document.getElementById('editGroupID').value;
+  var name = document.getElementById('editName').value.trim();
+  var creators = getTagValues(document.getElementById('editCreatorsTag'));
+  var status = document.getElementById('editStatus');
+
+  if (!name) { status.textContent = 'Name is required'; status.className = 'upload-status error'; return; }
+
+  status.textContent = 'Saving\u2026';
+  status.className = 'upload-status';
+
+  // 1. Save metadata (name + creators)
+  fetch('/admin/' + assetType + '/' + groupID, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name, creators: creators })
+  })
+  .then(function (res) {
+    if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
+    // 2. Upload pending files (if any)
+    if (editPendingFiles.length === 0) return Promise.resolve();
+    return uploadPendingFiles(assetType, name, creators);
+  })
+  .then(function () {
+    status.textContent = 'Saved!';
+    status.className = 'upload-status success';
+    setTimeout(function () {
+      closeEditModal();
+      htmx.ajax('GET', '/' + activeType, '#content');
+    }, 600);
+  })
+  .catch(function (err) {
+    status.textContent = err.message;
+    status.className = 'upload-status error';
+  });
+}
+
+function uploadPendingFiles(assetType, name, creators) {
+  var chain = Promise.resolve();
+  editPendingFiles.forEach(function (file) {
+    chain = chain.then(function () {
+      var meta = JSON.stringify({ name: name, creators: creators, license: 'unknown' });
+      var form = new FormData();
+      var metaBlob = new Blob([meta], { type: 'application/json' });
+      form.append('metadata', metaBlob, 'metadata.json');
+      form.append('file', file);
+      return fetch('/api/upload/' + encodeURIComponent(assetType), { method: 'POST', body: form })
+        .then(function (res) {
+          if (!res.ok) return res.json().then(function (j) { throw new Error(j.error || 'Upload failed'); });
+        });
+    });
+  });
+  return chain;
+}
+
+function formatFileSize(bytes) {
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
+/* ── Metadata modal ────────────────────────────────────────────────────────── */
+
+function openMetadataModal(assetType, groupID, name) {
+  document.getElementById('metadataGroupName').textContent = name;
+  document.getElementById('metadataContent').innerHTML =
+    '<span class="upload-status">Loading\u2026</span>';
+  document.getElementById('metadataModal').classList.add('open');
+
+  fetch('/admin/' + encodeURIComponent(assetType) + '/' + encodeURIComponent(groupID) + '/metadata')
+    .then(function (res) {
+      if (!res.ok) throw new Error('Failed to load metadata');
+      return res.json();
+    })
+    .then(function (items) { renderMetadata(items); })
+    .catch(function (err) {
+      document.getElementById('metadataContent').innerHTML =
+        '<span class="upload-status error">' + escapeHtml(err.message) + '</span>';
+    });
+}
+
+function closeMetadataModal() {
+  document.getElementById('metadataModal').classList.remove('open');
+}
+
+document.getElementById('metadataModal').addEventListener('click', function (e) {
+  if (e.target === this) closeMetadataModal();
+});
+
+function renderMetadata(items) {
+  var area = document.getElementById('metadataContent');
+  if (!items.length) {
+    area.innerHTML = '<span class="upload-status">No items found.</span>';
+    return;
+  }
+  var html = '';
+  items.forEach(function (item) {
+    var label = item.group_value || item.original_filename || item.item_id;
+    html += '<div class="metadata-card">';
+    html += '<div class="metadata-card-header">' + escapeHtml(label) +
+      ' <span class="chip-size">' + formatFileSize(item.size) + '</span></div>';
+    html += '<table class="metadata-table">';
+    html += metaRow('Item ID', item.item_id);
+    html += metaRow('Original file', item.original_filename);
+    html += metaRow('Created at', item.created_at);
+    html += metaRow('IP', item.creator_ip);
+    html += metaRow('User-Agent', item.creator_agent);
+    html += metaRow('Accept-Language', item.accept_language);
+    html += metaRow('Referer', item.referer);
+    html += metaRow('Content-Type', item.content_type);
+    html += metaRow('Request ID', item.request_id);
+    html += '</table></div>';
+  });
+  area.innerHTML = html;
+}
+
+function metaRow(label, value) {
+  var display = value ? escapeHtml(value) : '<span class="text-dim">\u2014</span>';
+  return '<tr><td class="metadata-label">' + escapeHtml(label) + '</td><td class="metadata-value">' + display + '</td></tr>';
 }

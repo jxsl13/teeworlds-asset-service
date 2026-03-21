@@ -90,5 +90,7 @@ CREATE TABLE search_value (
 );
 
 CREATE INDEX search_value_key_value_trgm_idx ON search_value USING GIN (key_value gin_trgm_ops);
+-- B-tree index for fast prefix matching on short queries (1-2 chars) where pg_trgm cannot produce trigrams.
+CREATE INDEX search_value_key_value_prefix_idx ON search_value (lower(key_value) varchar_pattern_ops);
 
 
