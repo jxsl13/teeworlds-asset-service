@@ -65,3 +65,11 @@ Request (api.*RequestObject)
 ## Asset Types (8)
 
 map, gameskin, hud, skin, entity, theme, template, emoticon — defined as PostgreSQL enum in `sql/migrations/001_schema.up.sql` and Go config in `config/resolution.go`.
+
+## Configuration Changes
+
+Whenever any file in `config/` is modified (e.g. `config/config.go`, `config/resolution.go`), always update `README.md` to reflect the changes:
+
+- Add, remove, or update rows in the relevant configuration table (Database, Server, Storage, OIDC, Rate Limiting, Branding, Per-Asset-Type Overrides).
+- Update the **Example Production Config** snippet if required/optional variables changed.
+- Update the **Pocket-ID Provisioning** table if `cmd/provision-pocketid` reads new or renamed variables.
