@@ -11,6 +11,13 @@ SELECT
         ''
     ) AS TEXT) AS creators,
     CAST(COALESCE(
+        (SELECT sv2.key_value
+         FROM search_value sv2
+         WHERE sv2.group_id = ag.group_id AND sv2.key_name = 'license'
+         LIMIT 1),
+        ''
+    ) AS TEXT) AS license,
+    CAST(COALESCE(
         (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
          FROM asset_item ai
          WHERE ai.group_id = ag.group_id),
@@ -41,7 +48,7 @@ WHERE ag.asset_type = $1
       OR EXISTS (
           SELECT 1 FROM search_value sv
           WHERE sv.group_id = ag.group_id
-            AND sv.key_name = 'creator'
+            AND sv.key_name = 'creators'
             AND sv.key_value ILIKE '%' || sqlc.narg(filter_creator)::text || '%'
       )
   )
@@ -53,6 +60,13 @@ WHERE ag.asset_type = $1
             AND sv.key_name = 'license'
             AND sv.key_value = sqlc.narg(filter_license)::text
       )
+  )
+  AND (
+      sqlc.narg(filter_date)::text IS NULL
+      OR to_char(COALESCE(
+          (SELECT MIN(dfsim.created_at) FROM asset_item dfai JOIN asset_item_metadata dfsim ON dfai.item_id = dfsim.item_id WHERE dfai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD') = sqlc.narg(filter_date)::text
   )
 ORDER BY
   CASE WHEN NOT sqlc.arg(sort_desc)::bool THEN

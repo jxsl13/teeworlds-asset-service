@@ -1,5 +1,5 @@
 
-.PHONY: generate build db-reset db-up db-down test seed
+.PHONY: generate build db-reset db-up db-down test seed seed-ddnet-skins pocketid-provision
 
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yaml --env-file docker/dev.env
 
@@ -27,9 +27,15 @@ db-reset:
 test:
 	set -a && . docker/dev.env && set +a && go test ./...
 
-# seed uploads procedurally generated assets to a running local instance.
-seed:
-	go run ./cmd/seed
+# seed-ddnet-skins scrapes the DDNet skin database and uploads all skins.
+seed-ddnet-skins:
+	go run ./cmd/seed-ddnet-skins
+
+# pocketid-provision creates the OIDC client + admin user on the local Pocket-ID
+# instance and writes the OIDC_CLIENT_ID / OIDC_CLIENT_SECRET into docker/dev.env.
+# Run this once after 'make db-up' and before starting the server.
+pocketid-provision:
+	set -a && . docker/dev.env && set +a && go run ./cmd/provision-pocketid -env-file docker/dev.env
 
 generate:
 	go generate ./...

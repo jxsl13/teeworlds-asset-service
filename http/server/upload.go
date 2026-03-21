@@ -13,11 +13,14 @@ import (
 	"io"
 	"mime/multipart"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
 	"github.com/jxsl13/asset-service/internal/twmap"
 	"github.com/jxsl13/asset-service/internal/twskin"
 	sqlc "github.com/jxsl13/asset-service/sql"
@@ -59,6 +62,10 @@ func (u *uploadContext) tmpName() string {
 // It dispatches to a per-asset-type upload function so that each type's
 // grouping, validation and thumbnail logic is explicit and self-contained.
 func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestObject) (api.UploadItemResponseObject, error) {
+	if s.adminOnlyUpload && !isAdmin(ctx) {
+		return api.UploadItem403JSONResponse{Error: "uploads are restricted to administrators"}, nil
+	}
+
 	meta, err := s.parseMetadata(request)
 	if err != nil {
 		return api.UploadItem400JSONResponse{Error: err.Error()}, nil
@@ -284,6 +291,29 @@ func (s *Server) prepareThumbnail(uc *uploadContext) (api.UploadItemResponseObje
 // persistUpload upserts the group, inserts the item variant, metadata & search values inside a transaction.
 // It resolves the canonical groupID, builds storage paths and generates thumbnails before the DB insert.
 func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.UploadItemResponseObject, error) {
+	// ── Per-IP rate limit: only checked when a NEW group would be created ─────
+	addr := clientip.FromContext(ctx)
+	if s.rateLimitMaxGroups > 0 && !addr.IsLoopback() {
+		_, err := s.dao.GetGroupID(ctx, sqlc.GetGroupIDParams{
+			AssetType: sqlc.AssetTypeEnum(uc.itemType),
+			GroupName: uc.meta.Name,
+			GroupKey:  uc.groupKey,
+		})
+		if errors.Is(err, stdsql.ErrNoRows) {
+			// Group does not exist yet — this upload would create a new group.
+			since := time.Now().Add(-s.rateLimitWindow)
+			count, err := s.dao.CountGroupsCreatedByIP(ctx, addr, since)
+			if err != nil {
+				return nil, fmt.Errorf("rate limit check: %w", err)
+			}
+			if count >= int64(s.rateLimitMaxGroups) {
+				return api.UploadItem429JSONResponse{
+					Error: fmt.Sprintf("rate limit exceeded: at most %d new asset groups may be created per IP within %s",
+						s.rateLimitMaxGroups, s.rateLimitWindow),
+				}, nil
+			}
+		}
+	}
 	txErr := s.dao.Tx(ctx, func(tx sqlc.DAO) error {
 		// Upsert the group (creates if new, no-ops if name+key already exists).
 		if err := tx.UpsertGroup(ctx, sqlc.UpsertGroupParams{
@@ -571,16 +601,24 @@ func metaToSearchValues(groupID uuid.UUID, meta api.ItemMetadata) []sqlc.InsertS
 
 // buildMetadataParams populates the DB audit row.
 func buildMetadataParams(ctx context.Context, itemID uuid.UUID) sqlc.InsertItemMetadataParams {
-	ip := clientIPFromContext(ctx)
+	addr := clientip.FromContext(ctx)
 	return sqlc.InsertItemMetadataParams{
-		ItemID: itemID,
-		CreatorIp: pqtype.Inet{
-			IPNet: net.IPNet{
-				IP:   net.ParseIP(ip),
-				Mask: net.CIDRMask(128, 128),
-			},
-			Valid: ip != "" && net.ParseIP(ip) != nil,
+		ItemID:    itemID,
+		CreatorIp: addrToInet(addr),
+	}
+}
+
+func addrToInet(addr netip.Addr) pqtype.Inet {
+	if !addr.IsValid() {
+		return pqtype.Inet{}
+	}
+	ip := addr.As16()
+	return pqtype.Inet{
+		IPNet: net.IPNet{
+			IP:   net.IP(ip[:]),
+			Mask: net.CIDRMask(128, 128),
 		},
+		Valid: true,
 	}
 }
 

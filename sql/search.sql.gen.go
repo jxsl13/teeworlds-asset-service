@@ -25,6 +25,13 @@ SELECT
         ''
     ) AS TEXT) AS creators,
     CAST(COALESCE(
+        (SELECT sv3.key_value
+         FROM search_value sv3
+         WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'license'
+         LIMIT 1),
+        ''
+    ) AS TEXT) AS license,
+    CAST(COALESCE(
         (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
          FROM asset_item ai
          WHERE ai.group_id = ag.group_id),
@@ -62,6 +69,7 @@ type SearchRow struct {
 	GroupName  string        `db:"group_name"`
 	GroupKey   string        `db:"group_key"`
 	Creators   string        `db:"creators"`
+	License    string        `db:"license"`
 	Variants   string        `db:"variants"`
 	Sml        float64       `db:"sml"`
 	TotalCount int64         `db:"total_count"`
@@ -82,6 +90,7 @@ func (q *Queries) Search(ctx context.Context, arg SearchParams) ([]SearchRow, er
 			&i.GroupName,
 			&i.GroupKey,
 			&i.Creators,
+			&i.License,
 			&i.Variants,
 			&i.Sml,
 			&i.TotalCount,
@@ -111,6 +120,13 @@ SELECT
          WHERE sv2.group_id = ag.group_id AND sv2.key_name = 'creators'),
         ''
     ) AS TEXT) AS creators,
+    CAST(COALESCE(
+        (SELECT sv3.key_value
+         FROM search_value sv3
+         WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'license'
+         LIMIT 1),
+        ''
+    ) AS TEXT) AS license,
     CAST(COALESCE(
         (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
          FROM asset_item ai
@@ -199,6 +215,7 @@ type SearchByTypeRow struct {
 	GroupName  string        `db:"group_name"`
 	GroupKey   string        `db:"group_key"`
 	Creators   string        `db:"creators"`
+	License    string        `db:"license"`
 	Variants   string        `db:"variants"`
 	TotalSize  int64         `db:"total_size"`
 	CreatedAt  time.Time     `db:"created_at"`
@@ -228,6 +245,7 @@ func (q *Queries) SearchByType(ctx context.Context, arg SearchByTypeParams) ([]S
 			&i.GroupName,
 			&i.GroupKey,
 			&i.Creators,
+			&i.License,
 			&i.Variants,
 			&i.TotalSize,
 			&i.CreatedAt,

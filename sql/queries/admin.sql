@@ -49,6 +49,22 @@ AND    group_id = $6;
 -- name: CountGroupItems :one
 SELECT COUNT(*) FROM asset_item WHERE group_id = $1;
 
+-- name: CountGroupsCreatedByIP :one
+-- Returns the number of distinct asset groups first created by the given IP
+-- within the given time window. A group is "created by" an IP if that IP
+-- uploaded the earliest item in the group.
+SELECT COUNT(*)::BIGINT
+FROM (
+    SELECT DISTINCT ON (ai.group_id)
+        aim.creator_ip,
+        aim.created_at
+    FROM asset_item ai
+    JOIN asset_item_metadata aim ON aim.item_id = ai.item_id
+    ORDER BY ai.group_id, aim.created_at ASC
+) AS first_uploads
+WHERE creator_ip = $1
+  AND created_at >= sqlc.arg(since)::TIMESTAMPTZ;
+
 -- name: GetGroupItems :many
 SELECT ai.item_id,
        ai.group_value,

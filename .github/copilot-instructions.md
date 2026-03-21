@@ -1,6 +1,6 @@
-# search-service
+# Teeworlds Asset Database
 
-Go asset search service — layered architecture with OpenAPI-first code generation.
+Community database for Teeworlds assets — Go service with layered architecture and OpenAPI-first code generation.
 
 ## Architecture
 

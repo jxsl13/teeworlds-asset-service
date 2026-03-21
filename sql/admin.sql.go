@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 )
 
 const countGroupItems = `-- name: CountGroupItems :one
@@ -22,6 +23,35 @@ func (q *Queries) CountGroupItems(ctx context.Context, groupID uuid.UUID) (int64
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const countGroupsCreatedByIP = `-- name: CountGroupsCreatedByIP :one
+SELECT COUNT(*)::BIGINT
+FROM (
+    SELECT DISTINCT ON (ai.group_id)
+        aim.creator_ip,
+        aim.created_at
+    FROM asset_item ai
+    JOIN asset_item_metadata aim ON aim.item_id = ai.item_id
+    ORDER BY ai.group_id, aim.created_at ASC
+) AS first_uploads
+WHERE creator_ip = $1
+  AND created_at >= $2::TIMESTAMPTZ
+`
+
+type CountGroupsCreatedByIPParams struct {
+	CreatorIp pqtype.Inet `db:"creator_ip"`
+	Since     time.Time   `db:"since"`
+}
+
+// Returns the number of distinct asset groups first created by the given IP
+// within the given time window. A group is "created by" an IP if that IP
+// uploaded the earliest item in the group.
+func (q *Queries) CountGroupsCreatedByIP(ctx context.Context, arg CountGroupsCreatedByIPParams) (int64, error) {
+	row := q.queryRow(ctx, q.countGroupsCreatedByIPStmt, countGroupsCreatedByIP, arg.CreatorIp, arg.Since)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const deleteGroup = `-- name: DeleteGroup :exec

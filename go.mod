@@ -12,6 +12,7 @@ require (
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/klauspost/compress v1.18.4
+	github.com/lib/pq v1.10.9
 	github.com/oapi-codegen/runtime v1.2.0
 	github.com/sqlc-dev/pqtype v0.3.0
 	golang.org/x/image v0.37.0

@@ -25,10 +25,10 @@ func NewSearchQuery(q string, limit, offset int) (SearchQuery, error) {
 		return SearchQuery{}, fmt.Errorf("query must not be empty")
 	}
 	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
 		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
 	}
 	if offset < 0 {
 		offset = 0
@@ -45,10 +45,10 @@ func NewSearchQueryByType(q, itemType string, limit, offset int, sort []SortDire
 		return SearchQuery{}, fmt.Errorf("asset_type must not be empty")
 	}
 	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
 		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
 	}
 	if offset < 0 {
 		offset = 0

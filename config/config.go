@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dustin/go-humanize"
 )
@@ -67,8 +69,8 @@ type Config struct {
 	//   others → smallest allowed resolution
 	ThumbnailSizes map[string]Resolution
 
-	// OIDC / Pocket-ID configuration.
-	// All fields are optional — when OIDCIssuerURL is empty, auth is disabled.
+	// OIDC / Pocket-ID configuration (required).
+	// Provision credentials via cmd/provision-pocketid before first start.
 	OIDCIssuerURL             string // Env: OIDC_ISSUER_URL
 	OIDCClientID              string // Env: OIDC_CLIENT_ID
 	OIDCClientSecret          string // Env: OIDC_CLIENT_SECRET
@@ -79,24 +81,63 @@ type Config struct {
 	// Env: INSECURE (default: false — set to "true" for local HTTP dev)
 	Insecure bool
 
-	// PocketIDStaticAPIKey is the admin API key for auto-provisioning Pocket-ID.
-	// When set (together with OIDCIssuerURL), the service provisions the OIDC
-	// client, admin group, admin user and prints a one-time login URL at startup.
-	// Env: POCKET_ID_STATIC_API_KEY
-	PocketIDStaticAPIKey string
+	// RateLimitMaxGroups is the maximum number of new asset groups a single IP
+	// may create within RateLimitWindow. Set to 0 to disable rate limiting.
+	// Env: RATE_LIMIT_MAX_GROUPS (default: 10)
+	RateLimitMaxGroups int
 
-	// PocketIDAdminEmail is the email for the initial Pocket-ID admin user.
-	// Env: POCKET_ID_ADMIN_EMAIL (default: admin@example.com)
-	PocketIDAdminEmail string
+	// RateLimitWindow is the sliding time window for the per-IP group creation
+	// rate limit. Accepts Go duration strings (e.g. 24h, 1h30m10s).
+	// Env: RATE_LIMIT_WINDOW (default: 24h)
+	RateLimitWindow time.Duration
 
-	// PocketIDClientName is the display name for the OIDC client in Pocket-ID.
-	// Env: POCKET_ID_CLIENT_NAME (default: "Asset Service")
-	PocketIDClientName string
+	// HTTPRateLimitRate is the steady-state request rate allowed per IP, in
+	// requests per second. Set to 0 to disable HTTP-level rate limiting.
+	// Env: HTTP_RATE_LIMIT_RATE (default: 20)
+	HTTPRateLimitRate float64
 
-	// PocketIDEncryptionKey is the passphrase for encrypting OIDC credentials
-	// stored in the database. Required when PocketIDStaticAPIKey is set.
-	// Env: POCKET_ID_ENCRYPTION_KEY
-	PocketIDEncryptionKey string
+	// HTTPRateLimitBurst is the maximum burst size for the per-IP token bucket.
+	// Env: HTTP_RATE_LIMIT_BURST (default: 40)
+	HTTPRateLimitBurst int
+
+	// HTTPRateLimitCleanup is how long an idle IP entry is kept before eviction.
+	// Env: HTTP_RATE_LIMIT_CLEANUP (default: 10m)
+	HTTPRateLimitCleanup time.Duration
+
+	// AdminOnlyUpload restricts asset uploads to authenticated admin users.
+	// When true, only users in the "admin" group can upload; the upload
+	// button is hidden for everyone else.
+	// Env: ADMIN_ONLY_UPLOAD (default: false)
+	AdminOnlyUpload bool
+
+	// ItemsPerPage is the default number of items returned per page when the
+	// client does not specify a limit. Also used as the default in UI views.
+	// Env: ITEMS_PER_PAGE (default: 100, max: 1000)
+	ItemsPerPage int
+
+	// Branding controls the visual identity shown in the UI header.
+	Branding Branding
+}
+
+// Branding holds the configurable UI header text and images.
+type Branding struct {
+	// SiteTitle is the page <title> and header heading.
+	// Env: BRANDING_TITLE (default: "Teeworlds Asset Database")
+	SiteTitle string
+
+	// SiteSubtitle is the tagline shown below the header heading.
+	// Env: BRANDING_SUBTITLE (default: "Community database for skins, maps, gameskins & more")
+	SiteSubtitle string
+
+	// HeaderImagePath is an optional local file path for a logo/image displayed in the header.
+	// The file is served statically at /branding/header-image.
+	// Env: BRANDING_HEADER_IMAGE_PATH (default: empty — no image shown)
+	HeaderImagePath string
+
+	// FaviconPath is an optional local file path for the browser tab icon.
+	// The file is served statically at /branding/favicon.
+	// Env: BRANDING_FAVICON_PATH (default: empty — browser default)
+	FaviconPath string
 }
 
 // Load reads configuration from environment variables, validates required
@@ -119,11 +160,7 @@ func Load() (Config, error) {
 		OIDCRedirectURL:           os.Getenv("OIDC_REDIRECT_URL"),
 		OIDCPostLogoutRedirectURL: os.Getenv("OIDC_POST_LOGOUT_REDIRECT_URL"),
 		Insecure:                  os.Getenv("INSECURE") == "true",
-
-		PocketIDStaticAPIKey:  os.Getenv("POCKET_ID_STATIC_API_KEY"),
-		PocketIDAdminEmail:    os.Getenv("POCKET_ID_ADMIN_EMAIL"),
-		PocketIDClientName:    os.Getenv("POCKET_ID_CLIENT_NAME"),
-		PocketIDEncryptionKey: os.Getenv("POCKET_ID_ENCRYPTION_KEY"),
+		AdminOnlyUpload:           os.Getenv("ADMIN_ONLY_UPLOAD") == "true",
 	}
 
 	var missing []string
@@ -133,6 +170,10 @@ func Load() (Config, error) {
 		{"DB_PASSWORD", cfg.DBPassword},
 		{"DB_NAME", cfg.DBName},
 		{"STORAGE_PATH", cfg.StoragePath},
+		{"OIDC_ISSUER_URL", cfg.OIDCIssuerURL},
+		{"OIDC_CLIENT_ID", cfg.OIDCClientID},
+		{"OIDC_CLIENT_SECRET", cfg.OIDCClientSecret},
+		{"OIDC_REDIRECT_URL", cfg.OIDCRedirectURL},
 	} {
 		if kv.val == "" {
 			missing = append(missing, kv.key)
@@ -154,11 +195,86 @@ func Load() (Config, error) {
 	if cfg.TempUploadPath == "" {
 		cfg.TempUploadPath = os.TempDir()
 	}
-	if cfg.PocketIDAdminEmail == "" {
-		cfg.PocketIDAdminEmail = "admin@example.com"
+
+	// ── Per-IP group creation rate limit ──────────────────────────────────────
+	cfg.RateLimitMaxGroups = 10
+	if raw := os.Getenv("RATE_LIMIT_MAX_GROUPS"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			return Config{}, fmt.Errorf("RATE_LIMIT_MAX_GROUPS: must be a non-negative integer, got %q", raw)
+		}
+		cfg.RateLimitMaxGroups = n
 	}
-	if cfg.PocketIDClientName == "" {
-		cfg.PocketIDClientName = "Asset Service"
+
+	cfg.RateLimitWindow = 24 * time.Hour
+	if raw := os.Getenv("RATE_LIMIT_WINDOW"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil || d <= 0 {
+			return Config{}, fmt.Errorf("RATE_LIMIT_WINDOW: must be a positive duration (e.g. 24h, 1h30m10s): %w", err)
+		}
+		cfg.RateLimitWindow = d
+	}
+
+	// ── HTTP-level per-IP request rate limit ─────────────────────────────
+	cfg.HTTPRateLimitRate = 20
+	if raw := os.Getenv("HTTP_RATE_LIMIT_RATE"); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v < 0 {
+			return Config{}, fmt.Errorf("HTTP_RATE_LIMIT_RATE: must be a non-negative number, got %q", raw)
+		}
+		cfg.HTTPRateLimitRate = v
+	}
+
+	cfg.HTTPRateLimitBurst = 40
+	if raw := os.Getenv("HTTP_RATE_LIMIT_BURST"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			return Config{}, fmt.Errorf("HTTP_RATE_LIMIT_BURST: must be a non-negative integer, got %q", raw)
+		}
+		cfg.HTTPRateLimitBurst = n
+	}
+
+	cfg.HTTPRateLimitCleanup = 10 * time.Minute
+	if raw := os.Getenv("HTTP_RATE_LIMIT_CLEANUP"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil || d <= 0 {
+			return Config{}, fmt.Errorf("HTTP_RATE_LIMIT_CLEANUP: must be a positive duration, got %q", raw)
+		}
+		cfg.HTTPRateLimitCleanup = d
+	}
+
+	// ── Items per page ────────────────────────────────────────────────────
+	cfg.ItemsPerPage = 100
+	if raw := os.Getenv("ITEMS_PER_PAGE"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 1000 {
+			return Config{}, fmt.Errorf("ITEMS_PER_PAGE: must be an integer between 1 and 1000, got %q", raw)
+		}
+		cfg.ItemsPerPage = n
+	}
+
+	// ── Branding ─────────────────────────────────────────────────────────
+	cfg.Branding = Branding{
+		SiteTitle:    "Teeworlds Asset Database",
+		SiteSubtitle: "Community database for skins, maps, gameskins \u0026 more",
+	}
+	if v := os.Getenv("BRANDING_TITLE"); v != "" {
+		cfg.Branding.SiteTitle = v
+	}
+	if v := os.Getenv("BRANDING_SUBTITLE"); v != "" {
+		cfg.Branding.SiteSubtitle = v
+	}
+	if v := os.Getenv("BRANDING_HEADER_IMAGE_PATH"); v != "" {
+		if _, err := os.Stat(v); err != nil {
+			return Config{}, fmt.Errorf("BRANDING_HEADER_IMAGE_PATH: %w", err)
+		}
+		cfg.Branding.HeaderImagePath = v
+	}
+	if v := os.Getenv("BRANDING_FAVICON_PATH"); v != "" {
+		if _, err := os.Stat(v); err != nil {
+			return Config{}, fmt.Errorf("BRANDING_FAVICON_PATH: %w", err)
+		}
+		cfg.Branding.FaviconPath = v
 	}
 
 	const defaultMaxStorageSize = 1 * 1024 * 1024 * 1024 // 1 GiB

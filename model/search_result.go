@@ -41,6 +41,7 @@ func SearchResultFromByTypeRows(rows []sqlc.SearchByTypeRow) SearchResult {
 			GroupName: row.GroupName,
 			GroupKey:  row.GroupKey,
 			Creators:  row.Creators,
+			License:   row.License,
 			Variants:  row.Variants,
 			TotalSize: row.TotalSize,
 			CreatedAt: row.CreatedAt,

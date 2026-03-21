@@ -26,6 +26,13 @@ SELECT
         ''
     ) AS TEXT) AS creators,
     CAST(COALESCE(
+        (SELECT sv2.key_value
+         FROM search_value sv2
+         WHERE sv2.group_id = ag.group_id AND sv2.key_name = 'license'
+         LIMIT 1),
+        ''
+    ) AS TEXT) AS license,
+    CAST(COALESCE(
         (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
          FROM asset_item ai
          WHERE ai.group_id = ag.group_id),
@@ -56,7 +63,7 @@ WHERE ag.asset_type = $1
       OR EXISTS (
           SELECT 1 FROM search_value sv
           WHERE sv.group_id = ag.group_id
-            AND sv.key_name = 'creator'
+            AND sv.key_name = 'creators'
             AND sv.key_value ILIKE '%' || $5::text || '%'
       )
   )
@@ -69,9 +76,16 @@ WHERE ag.asset_type = $1
             AND sv.key_value = $6::text
       )
   )
+  AND (
+      $7::text IS NULL
+      OR to_char(COALESCE(
+          (SELECT MIN(dfsim.created_at) FROM asset_item dfai JOIN asset_item_metadata dfsim ON dfai.item_id = dfsim.item_id WHERE dfai.group_id = ag.group_id),
+          '1970-01-01'::timestamptz
+      ), 'YYYY-MM-DD') = $7::text
+  )
 ORDER BY
-  CASE WHEN NOT $7::bool THEN
-    CASE $8::text
+  CASE WHEN NOT $8::bool THEN
+    CASE $9::text
       WHEN 'name'       THEN ag.group_name
       WHEN 'creators'   THEN COALESCE(
           (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
@@ -88,8 +102,8 @@ ORDER BY
       ELSE ag.group_name
     END
   END ASC,
-  CASE WHEN $7::bool THEN
-    CASE $8::text
+  CASE WHEN $8::bool THEN
+    CASE $9::text
       WHEN 'name'       THEN ag.group_name
       WHEN 'creators'   THEN COALESCE(
           (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
@@ -106,8 +120,8 @@ ORDER BY
       ELSE ag.group_name
     END
   END DESC,
-  CASE WHEN $9::text <> '' AND NOT $10::bool THEN
-    CASE $9::text
+  CASE WHEN $10::text <> '' AND NOT $11::bool THEN
+    CASE $10::text
       WHEN 'name'       THEN ag.group_name
       WHEN 'creators'   THEN COALESCE(
           (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
@@ -124,8 +138,8 @@ ORDER BY
       ELSE NULL
     END
   END ASC,
-  CASE WHEN $9::text <> '' AND $10::bool THEN
-    CASE $9::text
+  CASE WHEN $10::text <> '' AND $11::bool THEN
+    CASE $10::text
       WHEN 'name'       THEN ag.group_name
       WHEN 'creators'   THEN COALESCE(
           (SELECT string_agg(sv.key_value, ', ' ORDER BY sv.key_value)
@@ -153,6 +167,7 @@ type ListItemsParams struct {
 	FilterName    sql.NullString `db:"filter_name"`
 	FilterCreator sql.NullString `db:"filter_creator"`
 	FilterLicense sql.NullString `db:"filter_license"`
+	FilterDate    sql.NullString `db:"filter_date"`
 	SortDesc      bool           `db:"sort_desc"`
 	SortField     string         `db:"sort_field"`
 	SortField2    string         `db:"sort_field_2"`
@@ -165,6 +180,7 @@ type ListItemsRow struct {
 	GroupName  string        `db:"group_name"`
 	GroupKey   string        `db:"group_key"`
 	Creators   string        `db:"creators"`
+	License    string        `db:"license"`
 	Variants   string        `db:"variants"`
 	TotalSize  int64         `db:"total_size"`
 	CreatedAt  time.Time     `db:"created_at"`
@@ -179,6 +195,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 		arg.FilterName,
 		arg.FilterCreator,
 		arg.FilterLicense,
+		arg.FilterDate,
 		arg.SortDesc,
 		arg.SortField,
 		arg.SortField2,
@@ -197,6 +214,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 			&i.GroupName,
 			&i.GroupKey,
 			&i.Creators,
+			&i.License,
 			&i.Variants,
 			&i.TotalSize,
 			&i.CreatedAt,

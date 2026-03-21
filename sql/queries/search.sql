@@ -11,6 +11,13 @@ SELECT
         ''
     ) AS TEXT) AS creators,
     CAST(COALESCE(
+        (SELECT sv3.key_value
+         FROM search_value sv3
+         WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'license'
+         LIMIT 1),
+        ''
+    ) AS TEXT) AS license,
+    CAST(COALESCE(
         (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
          FROM asset_item ai
          WHERE ai.group_id = ag.group_id),
@@ -47,6 +54,13 @@ SELECT
          WHERE sv2.group_id = ag.group_id AND sv2.key_name = 'creators'),
         ''
     ) AS TEXT) AS creators,
+    CAST(COALESCE(
+        (SELECT sv3.key_value
+         FROM search_value sv3
+         WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'license'
+         LIMIT 1),
+        ''
+    ) AS TEXT) AS license,
     CAST(COALESCE(
         (SELECT string_agg(ai.item_id::text || ':' || ai.group_value, ',' ORDER BY ai.group_value)
          FROM asset_item ai

@@ -3,8 +3,12 @@ package sql
 import (
 	"context"
 	stdsql "database/sql"
+	"net"
+	"net/netip"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/sqlc-dev/pqtype"
 )
 
 // DAO is the data-access interface used by the service layer.
@@ -19,6 +23,7 @@ type DAO interface {
 	GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (stdsql.NullString, error)
 	GetItemByChecksum(ctx context.Context, checksum string) (GetItemByChecksumRow, error)
 	GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([]GetGroupFilesRow, error)
+	GetMultiGroupFiles(ctx context.Context, groupIDs []uuid.UUID) ([]GetMultiGroupFilesRow, error)
 	UpsertGroup(ctx context.Context, arg UpsertGroupParams) error
 	GetGroupID(ctx context.Context, arg GetGroupIDParams) (uuid.UUID, error)
 	InsertItem(ctx context.Context, arg InsertItemParams) (int64, error)
@@ -38,6 +43,7 @@ type DAO interface {
 	GetGroupItemsWithMetadata(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemsWithMetadataRow, error)
 	UpdateItem(ctx context.Context, arg UpdateItemParams) error
 	CountGroupItems(ctx context.Context, groupID uuid.UUID) (int64, error)
+	CountGroupsCreatedByIP(ctx context.Context, addr netip.Addr, since time.Time) (int64, error)
 
 	// Tx runs fn inside a single database transaction.
 	// The transaction is committed when fn returns nil, rolled back otherwise.
@@ -88,6 +94,10 @@ func (d *dao) GetItemByChecksum(ctx context.Context, checksum string) (GetItemBy
 
 func (d *dao) GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([]GetGroupFilesRow, error) {
 	return d.q.GetGroupFiles(ctx, arg)
+}
+
+func (d *dao) GetMultiGroupFiles(ctx context.Context, groupIDs []uuid.UUID) ([]GetMultiGroupFilesRow, error) {
+	return d.q.GetMultiGroupFiles(ctx, groupIDs)
 }
 
 func (d *dao) UpsertGroup(ctx context.Context, arg UpsertGroupParams) error {
@@ -156,6 +166,20 @@ func (d *dao) UpdateItem(ctx context.Context, arg UpdateItemParams) error {
 
 func (d *dao) CountGroupItems(ctx context.Context, groupID uuid.UUID) (int64, error) {
 	return d.q.CountGroupItems(ctx, groupID)
+}
+
+func (d *dao) CountGroupsCreatedByIP(ctx context.Context, addr netip.Addr, since time.Time) (int64, error) {
+	if !addr.IsValid() {
+		return 0, nil
+	}
+	ip16 := addr.As16()
+	return d.q.CountGroupsCreatedByIP(ctx, CountGroupsCreatedByIPParams{
+		CreatorIp: pqtype.Inet{
+			IPNet: net.IPNet{IP: net.IP(ip16[:]), Mask: net.CIDRMask(128, 128)},
+			Valid: true,
+		},
+		Since: since,
+	})
 }
 
 func (d *dao) Tx(ctx context.Context, fn func(tx DAO) error) error {

@@ -3,14 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Teeworlds Assets</title>
+  <title>{{.SiteTitle}}</title>
+  {{if .HasFavicon}}<link rel="icon" href="/branding/favicon">{{end}}
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/htmx.min.js"></script>
+  <script>
+    document.addEventListener('htmx:configRequest', function(event) {
+      var match = document.cookie.match('(?:^|; )__csrf=([^;]*)');
+      if (match) event.detail.headers['X-CSRF-Token'] = decodeURIComponent(match[1]);
+    });
+  </script>
 </head>
 <body>
   <div class="header">
-    <h1>Teeworlds <span>Assets</span></h1>
-    <div class="subtitle">Community asset database &mdash; skins, maps, gameskins &amp; more</div>
+    {{if .HasHeaderImage}}<img class="header-logo" src="/branding/header-image" alt="{{.SiteTitle}}">{{end}}
+    <h1>{{.SiteTitle}}</h1>
+    <div class="subtitle">{{.SiteSubtitle}}</div>
   </div>
 
   <div class="nav">
@@ -38,7 +46,7 @@
                  autocomplete="off"
                  value="{{.Query}}">
         </div>
-        <button class="btn-upload" onclick="openUpload()">&#x2B; Upload</button>
+        {{if .CanUpload}}<button class="btn-upload" onclick="openUpload()">&#x2B; Upload</button>{{end}}
         {{if .UserName}}
         <span class="user-badge" title="Logged in as {{.UserName}}">{{.UserName}}</span>
         <a href="/auth/logout?return_to=/{{.ActiveType}}" class="btn-auth">Logout</a>
@@ -48,9 +56,16 @@
   </div>
 
   <div class="container">
-    <div id="content" hx-get="/{{.ActiveType}}{{if .Query}}?q={{.Query}}{{end}}" hx-trigger="load" hx-swap="innerHTML">
+    <div id="content" hx-get="{{.ContentURL}}" hx-trigger="load" hx-swap="innerHTML">
       <span class="htmx-indicator spinner">Loading&hellip;</span>
     </div>
+  </div>
+
+  <!-- Selection bar (persistent across HTMX swaps) -->
+  <div class="selection-bar" id="selectionBar" style="display:none;">
+    <span id="selectionCount">0 selected</span>
+    <button class="btn-download-selected" onclick="downloadSelected()">&#x2B07; Download ZIP</button>
+    <button class="btn-clear-selection" onclick="clearSelection()">Clear</button>
   </div>
 
   <!-- Upload Modal -->
@@ -107,6 +122,10 @@
             <label>Creators</label>
             <div class="tag-input" id="editCreatorsTag"><input type="text" placeholder="Type name, press Enter"></div>
           </div>
+          <div class="form-group">
+            <label>License</label>
+            <select id="editLicense" class="ui-license"></select>
+          </div>
         </div>
 
         <label class="edit-items-label">Variants</label>
@@ -129,6 +148,7 @@
 
   <script>
     var activeType = '{{.ActiveType}}';
+    var initialSort = '{{.SortParam}}';
   </script>
   <script src="/static/upload.js"></script>
 </body>

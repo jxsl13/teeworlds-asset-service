@@ -19,6 +19,7 @@ type ListQuery struct {
 	FilterName    *string
 	FilterCreator *string
 	FilterLicense *string
+	FilterDate    *string
 	Sort          []SortDirective // max 2 directives
 }
 
@@ -62,15 +63,15 @@ func ParseSortDirectives(raw string) []SortDirective {
 }
 
 // NewListQuery validates and constructs a ListQuery.
-func NewListQuery(itemType string, limit, offset int, name, creator, license *string, sort []SortDirective) (ListQuery, error) {
+func NewListQuery(itemType string, limit, offset int, name, creator, license, date *string, sort []SortDirective) (ListQuery, error) {
 	if itemType == "" {
 		return ListQuery{}, fmt.Errorf("asset_type must not be empty")
 	}
 	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
 		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
 	}
 	if offset < 0 {
 		offset = 0
@@ -85,6 +86,7 @@ func NewListQuery(itemType string, limit, offset int, name, creator, license *st
 		FilterName:    name,
 		FilterCreator: creator,
 		FilterLicense: license,
+		FilterDate:    date,
 		Sort:          sort,
 	}, nil
 }

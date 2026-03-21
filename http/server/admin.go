@@ -105,6 +105,7 @@ func (s *Server) AdminDeleteVariant(w http.ResponseWriter, r *http.Request) {
 type adminUpdateGroupRequest struct {
 	Name     *string  `json:"name,omitempty"`
 	Creators []string `json:"creators,omitempty"`
+	License  *string  `json:"license,omitempty"`
 }
 
 // AdminUpdateGroup updates editable properties of a group.
@@ -168,6 +169,18 @@ func (s *Server) AdminUpdateGroup(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: groupID, KeyName: "creators", KeyValue: c}); err != nil {
+					return err
+				}
+			}
+		}
+
+		if body.License != nil {
+			license := strings.TrimSpace(*body.License)
+			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: groupID, KeyName: "license"}); err != nil {
+				return err
+			}
+			if license != "" {
+				if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: groupID, KeyName: "license", KeyValue: license}); err != nil {
 					return err
 				}
 			}

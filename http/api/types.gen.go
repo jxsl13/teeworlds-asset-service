@@ -200,6 +200,12 @@ type ListItemsResponse struct {
 	Total int `json:"total"`
 }
 
+// MultiBundleRequest defines model for MultiBundleRequest.
+type MultiBundleRequest struct {
+	// GroupIds List of asset group IDs to include in the ZIP archive.
+	GroupIds []openapi_types.UUID `json:"group_ids"`
+}
+
 // SearchResponse defines model for SearchResponse.
 type SearchResponse struct {
 	Results []SearchResult `json:"results"`
@@ -251,7 +257,7 @@ type SearchItemsByTypeParams struct {
 	// Q Search query string.
 	Q string `form:"q" json:"q"`
 
-	// Limit Maximum number of results to return (default 20, max 100).
+	// Limit Maximum number of results to return (default 100, max 1000).
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// Offset Number of results to skip for pagination (default 0).
@@ -281,7 +287,7 @@ type ListItemsParams struct {
 	// Order Sort direction (default "asc").
 	Order *SortOrder `form:"order,omitempty" json:"order,omitempty"`
 
-	// Limit Maximum number of results to return (default 20, max 100).
+	// Limit Maximum number of results to return (default 100, max 1000).
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// Offset Number of results to skip for pagination (default 0).
@@ -299,7 +305,7 @@ type RenderItemListParams struct {
 	// Q Optional fuzzy search query.
 	Q *string `form:"q,omitempty" json:"q,omitempty"`
 
-	// Limit Maximum number of results (default 20, max 100).
+	// Limit Maximum number of results (default 100, max 1000).
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// Offset Pagination offset (default 0).
@@ -307,7 +313,19 @@ type RenderItemListParams struct {
 
 	// Sort Comma-separated list of sort directives, each in the form "field:asc" or "field:desc". Supported fields are name and created_at. Example: "name:asc,created_at:desc".
 	Sort *string `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Creator Filter results to items with exactly this creator.
+	Creator *string `form:"creator,omitempty" json:"creator,omitempty"`
+
+	// License Filter results to items with exactly this license.
+	License *string `form:"license,omitempty" json:"license,omitempty"`
+
+	// Date Filter results to items created on this date (YYYY-MM-DD).
+	Date *string `form:"date,omitempty" json:"date,omitempty"`
 }
+
+// DownloadMultiBundleJSONRequestBody defines body for DownloadMultiBundle for application/json ContentType.
+type DownloadMultiBundleJSONRequestBody = MultiBundleRequest
 
 // UploadItemMultipartRequestBody defines body for UploadItem for multipart/form-data ContentType.
 type UploadItemMultipartRequestBody UploadItemMultipartBody

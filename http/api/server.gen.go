@@ -22,6 +22,9 @@ type ServerInterface interface {
 	// Render the main UI page
 	// (GET /)
 	RenderUI(w http.ResponseWriter, r *http.Request)
+	// Download multiple asset groups as a single ZIP archive
+	// (POST /api/download/bundle)
+	DownloadMultiBundle(w http.ResponseWriter, r *http.Request)
 	// List all available item types
 	// (GET /api/item-types)
 	ListItemTypes(w http.ResponseWriter, r *http.Request)
@@ -61,6 +64,12 @@ type Unimplemented struct{}
 // Render the main UI page
 // (GET /)
 func (_ Unimplemented) RenderUI(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Download multiple asset groups as a single ZIP archive
+// (POST /api/download/bundle)
+func (_ Unimplemented) DownloadMultiBundle(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -138,6 +147,20 @@ func (siw *ServerInterfaceWrapper) RenderUI(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RenderUI(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadMultiBundle operation middleware
+func (siw *ServerInterfaceWrapper) DownloadMultiBundle(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadMultiBundle(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -579,6 +602,30 @@ func (siw *ServerInterfaceWrapper) RenderItemList(w http.ResponseWriter, r *http
 		return
 	}
 
+	// ------------- Optional query parameter "creator" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "creator", r.URL.Query(), &params.Creator, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "creator", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "license" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "license", r.URL.Query(), &params.License, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "license", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "date" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date", r.URL.Query(), &params.Date, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RenderItemList(w, r, assetType, params)
 	}))
@@ -707,6 +754,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/", wrapper.RenderUI)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/download/bundle", wrapper.DownloadMultiBundle)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/item-types", wrapper.ListItemTypes)
 	})
 	r.Group(func(r chi.Router) {
@@ -769,6 +819,60 @@ func (response RenderUI200TexthtmlResponse) VisitRenderUIResponse(w http.Respons
 type RenderUI500JSONResponse ErrorResponse
 
 func (response RenderUI500JSONResponse) VisitRenderUIResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadMultiBundleRequestObject struct {
+	Body *DownloadMultiBundleJSONRequestBody
+}
+
+type DownloadMultiBundleResponseObject interface {
+	VisitDownloadMultiBundleResponse(w http.ResponseWriter) error
+}
+
+type DownloadMultiBundle200ApplicationzipResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response DownloadMultiBundle200ApplicationzipResponse) VisitDownloadMultiBundleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/zip")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadMultiBundle400JSONResponse ErrorResponse
+
+func (response DownloadMultiBundle400JSONResponse) VisitDownloadMultiBundleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadMultiBundle404JSONResponse ErrorResponse
+
+func (response DownloadMultiBundle404JSONResponse) VisitDownloadMultiBundleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadMultiBundle500JSONResponse ErrorResponse
+
+func (response DownloadMultiBundle500JSONResponse) VisitDownloadMultiBundleResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -934,11 +1038,29 @@ func (response UploadItem400JSONResponse) VisitUploadItemResponse(w http.Respons
 	return json.NewEncoder(w).Encode(response)
 }
 
+type UploadItem403JSONResponse ErrorResponse
+
+func (response UploadItem403JSONResponse) VisitUploadItemResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type UploadItem409JSONResponse ErrorResponse
 
 func (response UploadItem409JSONResponse) VisitUploadItemResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UploadItem429JSONResponse ErrorResponse
+
+func (response UploadItem429JSONResponse) VisitUploadItemResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1203,6 +1325,9 @@ type StrictServerInterface interface {
 	// Render the main UI page
 	// (GET /)
 	RenderUI(ctx context.Context, request RenderUIRequestObject) (RenderUIResponseObject, error)
+	// Download multiple asset groups as a single ZIP archive
+	// (POST /api/download/bundle)
+	DownloadMultiBundle(ctx context.Context, request DownloadMultiBundleRequestObject) (DownloadMultiBundleResponseObject, error)
 	// List all available item types
 	// (GET /api/item-types)
 	ListItemTypes(ctx context.Context, request ListItemTypesRequestObject) (ListItemTypesResponseObject, error)
@@ -1281,6 +1406,37 @@ func (sh *strictHandler) RenderUI(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RenderUIResponseObject); ok {
 		if err := validResponse.VisitRenderUIResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DownloadMultiBundle operation middleware
+func (sh *strictHandler) DownloadMultiBundle(w http.ResponseWriter, r *http.Request) {
+	var request DownloadMultiBundleRequestObject
+
+	var body DownloadMultiBundleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadMultiBundle(ctx, request.(DownloadMultiBundleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadMultiBundle")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadMultiBundleResponseObject); ok {
+		if err := validResponse.VisitDownloadMultiBundleResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

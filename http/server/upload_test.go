@@ -27,6 +27,7 @@ import (
 	"github.com/jxsl13/asset-service/config"
 	"github.com/jxsl13/asset-service/http/api"
 	httpserver "github.com/jxsl13/asset-service/http/server"
+	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
 	sqlpkg "github.com/jxsl13/asset-service/sql"
 )
 
@@ -78,6 +79,61 @@ func setupServer(t *testing.T) *httptest.Server {
 	return setupServerWithStorageLimit(t, 1<<30)
 }
 
+// setupServerWithRateLimit is like setupServer but enforces per-IP group creation limits.
+func setupServerWithRateLimit(t *testing.T, maxGroups int, window time.Duration) *httptest.Server {
+	t.Helper()
+	pool := connectPool(t)
+	ctx := context.Background()
+	if err := sqlpkg.Migrate(ctx, pool); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+
+	if _, err := db.ExecContext(ctx, "TRUNCATE search_value, search_value_weight, asset_item_metadata, asset_item, asset_group CASCADE"); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE storage_stats SET total_size = 0"); err != nil {
+		t.Fatalf("reset storage_stats: %v", err)
+	}
+
+	queries, err := sqlpkg.Prepare(ctx, db)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	storagePath := t.TempDir()
+	tempUploadPath := t.TempDir()
+	for _, at := range []string{"skin", "gameskin", "hud", "entity", "emoticon", "theme", "template", "map"} {
+		if err := os.MkdirAll(filepath.Join(storagePath, at), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", at, err)
+		}
+	}
+
+	resolutions := config.DefaultResolutions
+	thumbnails := config.DefaultThumbnailSizes()
+	maxUploadSizes := make(map[string]int64)
+	for k, v := range resolutions {
+		maxUploadSizes[k] = config.DefaultMaxUploadSize(k, v)
+	}
+	maxUploadSizes["map"] = 64 << 20
+
+	srv, err := httpserver.New(db, queries, storagePath, tempUploadPath, 1<<30, resolutions, maxUploadSizes, thumbnails, maxGroups, window, false, 100, config.Branding{SiteTitle: "Test"})
+	if err != nil {
+		t.Fatalf("New server: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+
+	r := chi.NewRouter()
+	r.Use(clientip.Middleware)
+	strict := api.NewStrictHandler(srv, nil)
+	api.HandlerWithOptions(strict, api.ChiServerOptions{BaseRouter: r})
+
+	ts := httptest.NewServer(r)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
 // setupServerWithStorageLimit is like setupServer but allows setting a custom storage limit.
 func setupServerWithStorageLimit(t *testing.T, maxStorageSize int64) *httptest.Server {
 	t.Helper()
@@ -121,14 +177,14 @@ func setupServerWithStorageLimit(t *testing.T, maxStorageSize int64) *httptest.S
 	}
 	maxUploadSizes["map"] = 64 << 20
 
-	srv, err := httpserver.New(db, queries, storagePath, tempUploadPath, maxStorageSize, resolutions, maxUploadSizes, thumbnails)
+	srv, err := httpserver.New(db, queries, storagePath, tempUploadPath, maxStorageSize, resolutions, maxUploadSizes, thumbnails, 0, 0, false, 100, config.Branding{SiteTitle: "Test"})
 	if err != nil {
 		t.Fatalf("New server: %v", err)
 	}
 	t.Cleanup(func() { _ = srv.Close() })
 
 	r := chi.NewRouter()
-	r.Use(httpserver.ClientIPMiddleware)
+	r.Use(clientip.Middleware)
 	strict := api.NewStrictHandler(srv, nil)
 	api.HandlerWithOptions(strict, api.ChiServerOptions{BaseRouter: r})
 
@@ -868,5 +924,51 @@ func TestSearchSingleChar(t *testing.T) {
 		if name == "abc" {
 			t.Fatalf("unexpected result 'abc' for query '0'")
 		}
+	}
+}
+
+// TestUploadRateLimit verifies that an IP cannot create more than the configured
+// number of new asset groups within the rate-limit window.
+func TestUploadRateLimit(t *testing.T) {
+	const maxGroups = 3
+	ts := setupServerWithRateLimit(t, maxGroups, 24*time.Hour)
+
+	// Upload maxGroups unique assets from the same IP — all should succeed.
+	for i := range maxGroups {
+		pngData := makePNG(256, 128, byte(100+i))
+		name := fmt.Sprintf("rate_skin_%d", i)
+		resp, err := uploadAsset(ts, "skin", name, "cc0", []string{"tester"}, name+".png", pngData)
+		if err != nil {
+			t.Fatalf("upload %d: %v", i, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("upload %d: expected 201, got %d: %s", i, resp.StatusCode, body)
+		}
+	}
+
+	// The next upload (new group name) must be rejected with 429.
+	pngData := makePNG(256, 128, byte(200))
+	resp, err := uploadAsset(ts, "skin", "rate_skin_over_limit", "cc0", []string{"tester"}, "over.png", pngData)
+	if err != nil {
+		t.Fatalf("over-limit upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 429 on over-limit upload, got %d: %s", resp.StatusCode, body)
+	}
+
+	// Adding a new VARIANT to an existing group must still succeed (not a new group).
+	existingVariantData := makePNG(512, 256, byte(201))
+	resp2, err := uploadAsset(ts, "skin", "rate_skin_0", "cc0", []string{"tester"}, "variant.png", existingVariantData)
+	if err != nil {
+		t.Fatalf("variant upload: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp2.Body)
+		t.Fatalf("variant upload: expected 201 (existing group), got %d: %s", resp2.StatusCode, body)
 	}
 }

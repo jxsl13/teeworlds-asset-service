@@ -43,3 +43,14 @@ JOIN   asset_group ag ON ai.group_id = ag.group_id
 WHERE  ai.group_id   = $1
 AND    ag.asset_type  = $2
 ORDER BY ai.size ASC;
+
+-- name: GetMultiGroupFiles :many
+SELECT ag.asset_type,
+       ag.group_name,
+       ai.group_value,
+       ai.item_file_path,
+       ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.group_id = ANY($1::uuid[])
+ORDER BY ag.asset_type, ag.group_name, ai.size ASC;

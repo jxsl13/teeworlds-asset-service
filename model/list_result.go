@@ -23,6 +23,7 @@ type ListItem struct {
 	GroupName string
 	GroupKey  string
 	Creators  string
+	License   string
 	Variants  string // comma-separated "uuid:value" pairs
 	TotalSize int64  // sum of all variant file sizes in bytes
 	CreatedAt time.Time
@@ -42,6 +43,7 @@ func ListResultFromRows(rows []sqlc.ListItemsRow) ListResult {
 			GroupName: row.GroupName,
 			GroupKey:  row.GroupKey,
 			Creators:  row.Creators,
+			License:   row.License,
 			Variants:  row.Variants,
 			TotalSize: row.TotalSize,
 			CreatedAt: row.CreatedAt,
@@ -60,6 +62,7 @@ func (result ListResult) ToAPI() api.ListItemsResponse {
 			ItemValue: map[string]interface{}{
 				"name":     item.GroupName,
 				"creators": item.Creators,
+				"license":  item.License,
 			},
 		})
 	}

@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/asset-service/http/server/middleware/htmx"
 	"github.com/jxsl13/asset-service/http/server/middleware/oidcauth"
 	"github.com/jxsl13/asset-service/model"
 	sqlc "github.com/jxsl13/asset-service/sql"
@@ -28,11 +30,18 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 
 	var buf bytes.Buffer
 	if err := s.layoutTpl.Execute(&buf, map[string]any{
-		"ItemTypes":  types,
-		"ActiveType": types[0],
-		"Query":      "",
-		"IsAdmin":    isAdmin(ctx),
-		"UserName":   userName(ctx),
+		"ItemTypes":      types,
+		"ActiveType":     types[0],
+		"Query":          "",
+		"ContentURL":     "/" + types[0],
+		"SortParam":      "name:asc",
+		"IsAdmin":        isAdmin(ctx),
+		"UserName":       userName(ctx),
+		"CanUpload":      !s.adminOnlyUpload || isAdmin(ctx),
+		"SiteTitle":      s.branding.SiteTitle,
+		"SiteSubtitle":   s.branding.SiteSubtitle,
+		"HasHeaderImage": s.branding.HeaderImagePath != "",
+		"HasFavicon":     s.branding.FaviconPath != "",
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}
@@ -43,7 +52,7 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 	}
 
 	// When navigated via HTMX (e.g. history restore), push the canonical URL.
-	if isHxRequest(ctx) {
+	if htmx.IsHTMXRequest(ctx) {
 		return renderUIHtmxResponse{
 			inner: resp,
 			hx:    htmxHeaders{pushURL: "/"},
@@ -55,7 +64,7 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 // RenderItemList implements api.StrictServerInterface.
 // It returns an HTML fragment with the items grid and pagination controls.
 func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListRequestObject) (api.RenderItemListResponseObject, error) {
-	limit := 20
+	limit := s.itemsPerPage
 	if request.Params.Limit != nil {
 		limit = *request.Params.Limit
 	}
@@ -80,6 +89,18 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 
 	itemType := string(request.AssetType)
 
+	// Filter params (only meaningful in list mode, ignored when q is set).
+	var filterCreator, filterLicense, filterDate *string
+	if request.Params.Creator != nil && *request.Params.Creator != "" {
+		filterCreator = request.Params.Creator
+	}
+	if request.Params.License != nil && *request.Params.License != "" {
+		filterLicense = request.Params.License
+	}
+	if request.Params.Date != nil && *request.Params.Date != "" {
+		filterDate = request.Params.Date
+	}
+
 	var (
 		views []itemView
 		total int
@@ -98,10 +119,10 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 		}
 		total = result.Total
 		for _, item := range result.Items {
-			views = append(views, toItemView(item.GroupID.String(), string(item.AssetType), item.GroupName, item.GroupKey, item.Creators, item.Variants, item.TotalSize, item.CreatedAt))
+			views = append(views, toItemView(item.GroupID.String(), string(item.AssetType), item.GroupName, item.GroupKey, item.Creators, item.License, item.Variants, item.TotalSize, item.CreatedAt))
 		}
 	} else {
-		query, err := model.NewListQuery(itemType, limit, offset, nil, nil, nil, sortDirs)
+		query, err := model.NewListQuery(itemType, limit, offset, nil, filterCreator, filterLicense, filterDate, sortDirs)
 		if err != nil {
 			return api.RenderItemList400JSONResponse{Error: err.Error()}, nil
 		}
@@ -111,7 +132,7 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 		}
 		total = result.Total
 		for _, item := range result.Items {
-			views = append(views, toItemView(item.GroupID.String(), string(item.AssetType), item.GroupName, item.GroupKey, item.Creators, item.Variants, item.TotalSize, item.CreatedAt))
+			views = append(views, toItemView(item.GroupID.String(), string(item.AssetType), item.GroupName, item.GroupKey, item.Creators, item.License, item.Variants, item.TotalSize, item.CreatedAt))
 		}
 	}
 
@@ -136,19 +157,42 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 	if sortParam != "" {
 		sortQParam = "&sort=" + template.URLQueryEscaper(sortParam)
 	}
+	filterQParam := ""
+	if filterCreator != nil {
+		filterQParam += "&creator=" + template.URLQueryEscaper(*filterCreator)
+	}
+	if filterLicense != nil {
+		filterQParam += "&license=" + template.URLQueryEscaper(*filterLicense)
+	}
+	if filterDate != nil {
+		filterQParam += "&date=" + template.URLQueryEscaper(*filterDate)
+	}
+
+	// Build active filter list for the filter bar.
+	var activeFilters []activeFilterView
+	if filterCreator != nil {
+		activeFilters = append(activeFilters, activeFilterView{Field: "creator", Label: "Creator", Value: *filterCreator})
+	}
+	if filterLicense != nil {
+		activeFilters = append(activeFilters, activeFilterView{Field: "license", Label: "License", Value: *filterLicense})
+	}
+	if filterDate != nil {
+		activeFilters = append(activeFilters, activeFilterView{Field: "date", Label: "Date", Value: *filterDate})
+	}
 
 	data := itemsPageData{
-		Items:     views,
-		Total:     total,
-		Limit:     limit,
-		Offset:    offset,
-		PageStart: offset + 1,
-		PageEnd:   pageEnd,
-		PrevURL:   fmt.Sprintf("%s?limit=%d&offset=%d%s%s", baseURL, limit, prevOffset, qParam, sortQParam),
-		NextURL:   fmt.Sprintf("%s?limit=%d&offset=%d%s%s", baseURL, limit, offset+limit, qParam, sortQParam),
-		SortParam: sortParam,
-		Columns:   columns,
-		IsAdmin:   isAdmin(ctx),
+		Items:         views,
+		Total:         total,
+		Limit:         limit,
+		Offset:        offset,
+		PageStart:     offset + 1,
+		PageEnd:       pageEnd,
+		PrevURL:       fmt.Sprintf("%s?limit=%d&offset=%d%s%s%s", baseURL, limit, prevOffset, qParam, sortQParam, filterQParam),
+		NextURL:       fmt.Sprintf("%s?limit=%d&offset=%d%s%s%s", baseURL, limit, offset+limit, qParam, sortQParam, filterQParam),
+		SortParam:     sortParam,
+		Columns:       columns,
+		ActiveFilters: activeFilters,
+		IsAdmin:       isAdmin(ctx),
 	}
 
 	var buf bytes.Buffer
@@ -163,10 +207,10 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 
 	// For HTMX requests, push the current URL so the browser address bar
 	// stays in sync with the visible content (enables refresh & bookmarks).
-	if isHxRequest(ctx) {
+	if htmx.IsHTMXRequest(ctx) {
 		pushURL := baseURL
-		if q != "" || offset > 0 || sortParam != "" {
-			pushURL = fmt.Sprintf("%s?limit=%d&offset=%d%s%s", baseURL, limit, offset, qParam, sortQParam)
+		if q != "" || offset > 0 || sortParam != "" || filterQParam != "" {
+			pushURL = fmt.Sprintf("%s?limit=%d&offset=%d%s%s%s", baseURL, limit, offset, qParam, sortQParam, filterQParam)
 		}
 		return renderItemListHtmxResponse{
 			inner: resp,
@@ -176,12 +220,31 @@ func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListR
 
 	// Direct browser navigation (not HTMX) — render the full page layout
 	// with the correct tab pre-selected so the content loads on page init.
-	return s.renderFullPage(ctx, itemType, q)
+	contentParams := url.Values{}
+	contentParams.Set("limit", strconv.Itoa(limit))
+	contentParams.Set("offset", strconv.Itoa(offset))
+	if q != "" {
+		contentParams.Set("q", q)
+	}
+	if sortParam != "" {
+		contentParams.Set("sort", sortParam)
+	}
+	if filterCreator != nil {
+		contentParams.Set("creator", *filterCreator)
+	}
+	if filterLicense != nil {
+		contentParams.Set("license", *filterLicense)
+	}
+	if filterDate != nil {
+		contentParams.Set("date", *filterDate)
+	}
+	contentURL := "/" + itemType + "?" + contentParams.Encode()
+	return s.renderFullPage(ctx, itemType, q, contentURL, sortParam)
 }
 
 // renderFullPage renders the complete layout HTML with the given item type
 // pre-selected. Used when /{asset_type} is accessed via direct browser navigation.
-func (s *Server) renderFullPage(ctx context.Context, activeType, query string) (api.RenderItemListResponseObject, error) {
+func (s *Server) renderFullPage(ctx context.Context, activeType, query, contentURL, sortParam string) (api.RenderItemListResponseObject, error) {
 	allEnums := sqlc.AllAssetTypeEnumValues()
 	types := make([]string, 0, len(allEnums))
 	for _, e := range allEnums {
@@ -191,11 +254,18 @@ func (s *Server) renderFullPage(ctx context.Context, activeType, query string) (
 
 	var buf bytes.Buffer
 	if err := s.layoutTpl.Execute(&buf, map[string]any{
-		"ItemTypes":  types,
-		"ActiveType": activeType,
-		"Query":      query,
-		"IsAdmin":    isAdmin(ctx),
-		"UserName":   userName(ctx),
+		"ItemTypes":      types,
+		"ActiveType":     activeType,
+		"Query":          query,
+		"ContentURL":     contentURL,
+		"SortParam":      sortParam,
+		"IsAdmin":        isAdmin(ctx),
+		"UserName":       userName(ctx),
+		"CanUpload":      !s.adminOnlyUpload || isAdmin(ctx),
+		"SiteTitle":      s.branding.SiteTitle,
+		"SiteSubtitle":   s.branding.SiteSubtitle,
+		"HasHeaderImage": s.branding.HeaderImagePath != "",
+		"HasFavicon":     s.branding.FaviconPath != "",
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}
@@ -218,7 +288,9 @@ type itemView struct {
 	GroupID      string
 	ItemType     string
 	Name         string
-	Creators     string
+	Creators     string   // comma-separated, used by the admin edit modal call
+	CreatorList  []string // individual creator names for rendering chips
+	License      string
 	Size         string        // human-readable total size
 	Date         string        // formatted creation date
 	GroupKey     string        // e.g. "resolution" — used to label the variants column
@@ -234,18 +306,26 @@ type sortColumn struct {
 	Rank  int    // 1-based position in multi-sort, 0 if not active
 }
 
+// activeFilterView describes a single active column filter shown in the filter bar.
+type activeFilterView struct {
+	Field string // "creator", "license", or "date"
+	Label string // human-readable field name
+	Value string // the filter value
+}
+
 type itemsPageData struct {
-	Items     []itemView
-	Total     int
-	Limit     int
-	Offset    int
-	PageStart int
-	PageEnd   int
-	PrevURL   string
-	NextURL   string
-	SortParam string       // raw sort param to preserve in pagination links
-	Columns   []sortColumn // columns for header rendering
-	IsAdmin   bool         // true when the current user has the "admin" group
+	Items         []itemView
+	Total         int
+	Limit         int
+	Offset        int
+	PageStart     int
+	PageEnd       int
+	PrevURL       string
+	NextURL       string
+	SortParam     string             // raw sort param to preserve in pagination links
+	Columns       []sortColumn       // columns for header rendering
+	ActiveFilters []activeFilterView // active column filters shown in the filter bar
+	IsAdmin       bool               // true when the current user has the "admin" group
 }
 
 // parseVariants splits the DB-aggregated "uuid:value,uuid:value,…" string
@@ -296,9 +376,17 @@ func parseResolution(s string) (int, int) {
 	return w, h
 }
 
-func toItemView(groupID, assetType, groupName, groupKey, creators, variants string, totalSize int64, createdAt time.Time) itemView {
+func toItemView(groupID, assetType, groupName, groupKey, creators, license, variants string, totalSize int64, createdAt time.Time) itemView {
 	if creators == "" {
 		creators = "unknown"
+	}
+	// Split the aggregated comma-separated creators string into individual names.
+	parts := strings.Split(creators, ", ")
+	creatorList := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			creatorList = append(creatorList, p)
+		}
 	}
 	date := createdAt.Format("2006-01-02")
 	if createdAt.Year() <= 1970 {
@@ -309,6 +397,8 @@ func toItemView(groupID, assetType, groupName, groupKey, creators, variants stri
 		ItemType:     assetType,
 		Name:         groupName,
 		Creators:     creators,
+		CreatorList:  creatorList,
+		License:      license,
 		Size:         formatSize(totalSize),
 		Date:         date,
 		GroupKey:     groupKey,
@@ -341,6 +431,7 @@ func buildSortColumns(dirs []model.SortDirective) []sortColumn {
 	allCols := []struct{ field, label string }{
 		{"name", "Name"},
 		{"creators", "Creators"},
+		{"license", "License"},
 		{"size", "Size"},
 		{"created_at", "Date"},
 	}

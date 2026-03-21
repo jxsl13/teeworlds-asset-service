@@ -1,6 +1,21 @@
+{{if .ActiveFilters}}
+<div class="filter-bar">
+  <span class="filter-bar-label">Filtered by:</span>
+  {{range .ActiveFilters}}
+  <span class="active-filter-chip" onclick="clearFilter('{{.Field}}')">
+    <span class="active-filter-text">{{.Label}}: {{.Value}}</span>
+    <span class="active-filter-remove" title="Remove filter">&times;</span>
+  </span>
+  {{end}}
+  {{if gt (len .ActiveFilters) 1}}
+  <button class="btn-clear-all-filters" onclick="clearAllFilters()">Clear all</button>
+  {{end}}
+</div>
+{{end}}
 <table class="items-table">
   <thead>
     <tr class="sort-header">
+      <th class="col-select"><input type="checkbox" id="selectAll" title="Select all" onclick="toggleSelectAll(this)"></th>
       <th class="col-thumb"></th>
       {{range .Columns}}
       <th class="col-{{.Field}}{{if .Dir}} active{{end}}"
@@ -20,6 +35,7 @@
   {{if .Items}}
     {{range .Items}}
     <tr data-type="{{.ItemType}}" data-group-id="{{.GroupID}}">
+      <td class="col-select"><input type="checkbox" class="row-select" data-group-id="{{.GroupID}}" onchange="toggleRowSelect(this)"></td>
       <td class="col-thumb">
         {{if .HasThumbnail}}
         <img src="/api/{{.ItemType}}/{{.GroupID}}/thumbnail" alt="{{.Name}}" loading="lazy" onclick="openPreview(this.src)">
@@ -28,9 +44,10 @@
         {{end}}
       </td>
       <td class="col-name">{{.Name}}</td>
-      <td class="col-creators">{{.Creators}}</td>
+      <td class="col-creators">{{range .CreatorList}}<span class="filter-chip" data-field="creator" data-value="{{.}}" onclick="filterByCell(this)">{{.}}</span>{{end}}</td>
+      <td class="col-license">{{if .License}}<span class="filter-chip" data-field="license" data-value="{{.License}}" onclick="filterByCell(this)">{{.License}}</span>{{end}}</td>
       <td class="col-size">{{.Size}}</td>
-      <td class="col-created_at">{{.Date}}</td>
+      <td class="col-created_at">{{if .Date}}<span class="filter-chip" data-field="date" data-value="{{.Date}}" onclick="filterByCell(this)">{{.Date}}</span>{{end}}</td>
       <td class="col-actions">
         {{if .Variants}}
           {{$type := .ItemType}}
@@ -58,14 +75,14 @@
       {{if $.IsAdmin}}
       <td class="col-admin">
         <button class="btn-admin btn-info" onclick="openMetadataModal('{{.ItemType}}', '{{.GroupID}}', '{{.Name}}')" title="Item metadata">&#9432;</button>
-        <button class="btn-admin btn-edit" onclick="openEditModal('{{.ItemType}}', '{{.GroupID}}', '{{.Name}}', '{{.Creators}}')" title="Edit">&#9998;</button>
+        <button class="btn-admin btn-edit" onclick="openEditModal('{{.ItemType}}', '{{.GroupID}}', '{{.Name}}', '{{.Creators}}', '{{.License}}')" title="Edit">&#9998;</button>
         <button class="btn-admin btn-delete" onclick="adminDeleteGroup('{{.ItemType}}', '{{.GroupID}}', '{{.Name}}')" title="Delete group">&times;</button>
       </td>
       {{end}}
     </tr>
     {{end}}
   {{else}}
-    <tr><td colspan="{{if $.IsAdmin}}7{{else}}6{{end}}" class="empty-state">No items found.</td></tr>
+    <tr><td colspan="{{if $.IsAdmin}}9{{else}}8{{end}}" class="empty-state">No items found.</td></tr>
   {{end}}
   </tbody>
 </table>

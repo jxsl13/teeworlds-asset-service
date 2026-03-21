@@ -27,6 +27,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countGroupItemsStmt, err = db.PrepareContext(ctx, countGroupItems); err != nil {
 		return nil, fmt.Errorf("error preparing query CountGroupItems: %w", err)
 	}
+	if q.countGroupsCreatedByIPStmt, err = db.PrepareContext(ctx, countGroupsCreatedByIP); err != nil {
+		return nil, fmt.Errorf("error preparing query CountGroupsCreatedByIP: %w", err)
+	}
 	if q.deleteGroupStmt, err = db.PrepareContext(ctx, deleteGroup); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteGroup: %w", err)
 	}
@@ -72,8 +75,8 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getItemThumbnailPathStmt, err = db.PrepareContext(ctx, getItemThumbnailPath); err != nil {
 		return nil, fmt.Errorf("error preparing query GetItemThumbnailPath: %w", err)
 	}
-	if q.getKVStmt, err = db.PrepareContext(ctx, getKV); err != nil {
-		return nil, fmt.Errorf("error preparing query GetKV: %w", err)
+	if q.getMultiGroupFilesStmt, err = db.PrepareContext(ctx, getMultiGroupFiles); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMultiGroupFiles: %w", err)
 	}
 	if q.insertItemStmt, err = db.PrepareContext(ctx, insertItem); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertItem: %w", err)
@@ -102,9 +105,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.upsertGroupStmt, err = db.PrepareContext(ctx, upsertGroup); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertGroup: %w", err)
 	}
-	if q.upsertKVStmt, err = db.PrepareContext(ctx, upsertKV); err != nil {
-		return nil, fmt.Errorf("error preparing query UpsertKV: %w", err)
-	}
 	return &q, nil
 }
 
@@ -113,6 +113,11 @@ func (q *Queries) Close() error {
 	if q.countGroupItemsStmt != nil {
 		if cerr := q.countGroupItemsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countGroupItemsStmt: %w", cerr)
+		}
+	}
+	if q.countGroupsCreatedByIPStmt != nil {
+		if cerr := q.countGroupsCreatedByIPStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countGroupsCreatedByIPStmt: %w", cerr)
 		}
 	}
 	if q.deleteGroupStmt != nil {
@@ -190,9 +195,9 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getItemThumbnailPathStmt: %w", cerr)
 		}
 	}
-	if q.getKVStmt != nil {
-		if cerr := q.getKVStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getKVStmt: %w", cerr)
+	if q.getMultiGroupFilesStmt != nil {
+		if cerr := q.getMultiGroupFilesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMultiGroupFilesStmt: %w", cerr)
 		}
 	}
 	if q.insertItemStmt != nil {
@@ -240,11 +245,6 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upsertGroupStmt: %w", cerr)
 		}
 	}
-	if q.upsertKVStmt != nil {
-		if cerr := q.upsertKVStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing upsertKVStmt: %w", cerr)
-		}
-	}
 	return err
 }
 
@@ -285,6 +285,7 @@ type Queries struct {
 	db                            DBTX
 	tx                            *sql.Tx
 	countGroupItemsStmt           *sql.Stmt
+	countGroupsCreatedByIPStmt    *sql.Stmt
 	deleteGroupStmt               *sql.Stmt
 	deleteItemStmt                *sql.Stmt
 	deleteSearchValuesStmt        *sql.Stmt
@@ -300,7 +301,7 @@ type Queries struct {
 	getItemFilePathStmt           *sql.Stmt
 	getItemInfoStmt               *sql.Stmt
 	getItemThumbnailPathStmt      *sql.Stmt
-	getKVStmt                     *sql.Stmt
+	getMultiGroupFilesStmt        *sql.Stmt
 	insertItemStmt                *sql.Stmt
 	insertItemMetadataStmt        *sql.Stmt
 	insertSearchValueStmt         *sql.Stmt
@@ -310,7 +311,6 @@ type Queries struct {
 	updateGroupNameStmt           *sql.Stmt
 	updateItemStmt                *sql.Stmt
 	upsertGroupStmt               *sql.Stmt
-	upsertKVStmt                  *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -318,6 +318,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		db:                            tx,
 		tx:                            tx,
 		countGroupItemsStmt:           q.countGroupItemsStmt,
+		countGroupsCreatedByIPStmt:    q.countGroupsCreatedByIPStmt,
 		deleteGroupStmt:               q.deleteGroupStmt,
 		deleteItemStmt:                q.deleteItemStmt,
 		deleteSearchValuesStmt:        q.deleteSearchValuesStmt,
@@ -333,7 +334,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getItemFilePathStmt:           q.getItemFilePathStmt,
 		getItemInfoStmt:               q.getItemInfoStmt,
 		getItemThumbnailPathStmt:      q.getItemThumbnailPathStmt,
-		getKVStmt:                     q.getKVStmt,
+		getMultiGroupFilesStmt:        q.getMultiGroupFilesStmt,
 		insertItemStmt:                q.insertItemStmt,
 		insertItemMetadataStmt:        q.insertItemMetadataStmt,
 		insertSearchValueStmt:         q.insertSearchValueStmt,
@@ -343,6 +344,5 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateGroupNameStmt:           q.updateGroupNameStmt,
 		updateItemStmt:                q.updateItemStmt,
 		upsertGroupStmt:               q.upsertGroupStmt,
-		upsertKVStmt:                  q.upsertKVStmt,
 	}
 }

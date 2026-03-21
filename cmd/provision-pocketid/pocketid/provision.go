@@ -4,44 +4,21 @@
 // assigns the user to the group, and generates a one-time access token so
 // the admin can register a passkey on first login.
 //
-// Credentials (client_id + client_secret) are encrypted with AES-256-GCM
-// and persisted in the kv_store table. On subsequent starts the stored
-// credentials are reused — a new secret is only generated when no valid
-// credentials exist in the database.
+// This package is used exclusively by cmd/provision-pocketid. The main
+// service receives OIDC credentials via environment variables.
 package pocketid
 
 import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
 )
-
-const (
-	kvKeyOIDCCredentials = "oidc_credentials"
-)
-
-// storedCredentials is the JSON structure persisted (encrypted) in kv_store.
-type storedCredentials struct {
-	ClientID string `json:"client_id"`
-	Secret   string `json:"secret"`
-}
-
-// KVStore is the subset of the sqlc Queries interface needed by this package.
-type KVStore interface {
-	GetKV(ctx context.Context, key string) (string, error)
-	UpsertKV(ctx context.Context, arg interface {
-		GetKey() string
-		GetValue() string
-	}) error
-}
 
 // Config holds the parameters needed to provision a Pocket-ID instance.
 type Config struct {
@@ -66,12 +43,6 @@ type Config struct {
 	// AdminGroupName is the name of the admin user group (e.g. "admin").
 	AdminGroupName string
 
-	// EncryptionKey is the passphrase used to encrypt/decrypt stored credentials.
-	EncryptionKey string
-
-	// DB is the database connection used to persist encrypted credentials.
-	DB *sql.DB
-
 	// Insecure skips TLS certificate verification (for self-signed dev certs).
 	Insecure bool
 }
@@ -86,10 +57,9 @@ type Result struct {
 
 // Provision provisions Pocket-ID for first use. It is idempotent:
 //
-//  1. Try to load encrypted credentials from the database.
-//  2. If found, decrypt and verify them against Pocket-ID, then return.
-//  3. If not found, create the OIDC client + secret, encrypt, and store them.
-//  4. In both cases, ensure the admin group, admin user, and group assignment exist.
+//  1. Create the OIDC client + secret (or reuse existing by name).
+//  2. Ensure the admin group, admin user, and group assignment exist.
+//  3. Return credentials for the caller to store in environment / config.
 func Provision(ctx context.Context, cfg Config) (*Result, error) {
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	if cfg.Insecure {
@@ -109,44 +79,18 @@ func Provision(ctx context.Context, cfg Config) (*Result, error) {
 		return nil, err
 	}
 
-	// ── Try stored credentials first ────────────────────────────────────────
-	creds, err := loadCredentials(ctx, cfg.DB, cfg.EncryptionKey)
+	// ── Create OIDC client + secret ─────────────────────────────────────────
+	clientID, err := c.ensureOIDCClient(ctx, cfg.ClientName, cfg.CallbackURLs, cfg.LogoutCallbackURLs)
 	if err != nil {
-		return nil, fmt.Errorf("load credentials: %w", err)
+		return nil, fmt.Errorf("ensure oidc client: %w", err)
 	}
+	slog.Info("pocket-id: OIDC client ready", "id", clientID)
 
-	var loginURL string
-
-	if creds != nil {
-		// Verify the client still exists on Pocket-ID.
-		if c.clientExists(ctx, creds.ClientID) {
-			slog.Info("pocket-id: reusing stored credentials", "client_id", creds.ClientID)
-		} else {
-			// Client was deleted in Pocket-ID — reprovision.
-			slog.Warn("pocket-id: stored client no longer exists, reprovisioning")
-			creds = nil
-		}
+	secret, err := c.createClientSecret(ctx, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("create client secret: %w", err)
 	}
-
-	if creds == nil {
-		// Full provisioning path.
-		clientID, err := c.ensureOIDCClient(ctx, cfg.ClientName, cfg.CallbackURLs, cfg.LogoutCallbackURLs)
-		if err != nil {
-			return nil, fmt.Errorf("ensure oidc client: %w", err)
-		}
-		slog.Info("pocket-id: OIDC client ready", "id", clientID)
-
-		secret, err := c.createClientSecret(ctx, clientID)
-		if err != nil {
-			return nil, fmt.Errorf("create client secret: %w", err)
-		}
-		slog.Info("pocket-id: client secret generated")
-
-		creds = &storedCredentials{ClientID: clientID, Secret: secret}
-		if err := saveCredentials(ctx, cfg.DB, cfg.EncryptionKey, creds); err != nil {
-			return nil, fmt.Errorf("save credentials: %w", err)
-		}
-	}
+	slog.Info("pocket-id: client secret generated")
 
 	// ── Ensure supporting resources (always, for idempotency) ───────────────
 
@@ -168,7 +112,7 @@ func Provision(ctx context.Context, cfg Config) (*Result, error) {
 
 	// Ensure the OIDC client has the admin group as an allowed user group,
 	// otherwise Pocket-ID won't include "groups" in the ID token.
-	if err := c.assignGroupToClient(ctx, creds.ClientID, groupID); err != nil {
+	if err := c.assignGroupToClient(ctx, clientID, groupID); err != nil {
 		return nil, fmt.Errorf("assign group to client: %w", err)
 	}
 
@@ -177,59 +121,15 @@ func Provision(ctx context.Context, cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create one-time access token: %w", err)
 	}
-	loginURL = fmt.Sprintf("%s/lc/%s", cfg.BaseURL, token)
+	loginURL := fmt.Sprintf("%s/lc/%s", cfg.BaseURL, token)
 	slog.Info("pocket-id: provisioning complete", "login_url", loginURL)
 
 	return &Result{
-		ClientID:    creds.ClientID,
-		Secret:      creds.Secret,
+		ClientID:    clientID,
+		Secret:      secret,
 		LoginURL:    loginURL,
 		AdminUserID: userID,
 	}, nil
-}
-
-// ── Credential persistence ──────────────────────────────────────────────────
-
-func loadCredentials(ctx context.Context, db *sql.DB, encKey string) (*storedCredentials, error) {
-	var encrypted string
-	err := db.QueryRowContext(ctx, "SELECT value FROM kv_store WHERE key = $1", kvKeyOIDCCredentials).Scan(&encrypted)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	plain, err := decrypt(encrypted, encKey)
-	if err != nil {
-		// Key mismatch or corrupted data — treat as missing so we reprovision.
-		slog.Warn("pocket-id: failed to decrypt stored credentials, will reprovision", "err", err)
-		return nil, nil
-	}
-
-	var creds storedCredentials
-	if err := json.Unmarshal([]byte(plain), &creds); err != nil {
-		slog.Warn("pocket-id: failed to parse stored credentials, will reprovision", "err", err)
-		return nil, nil
-	}
-	return &creds, nil
-}
-
-func saveCredentials(ctx context.Context, db *sql.DB, encKey string, creds *storedCredentials) error {
-	plain, err := json.Marshal(creds)
-	if err != nil {
-		return err
-	}
-
-	encrypted, err := encrypt(string(plain), encKey)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.ExecContext(ctx,
-		"INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-		kvKeyOIDCCredentials, encrypted)
-	return err
 }
 
 // ── HTTP API client ─────────────────────────────────────────────────────────

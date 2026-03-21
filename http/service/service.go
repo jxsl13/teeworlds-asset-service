@@ -61,6 +61,7 @@ func (s *SearchService) ListItems(ctx context.Context, query model.ListQuery) (m
 		FilterName:    toNullString(query.FilterName),
 		FilterCreator: toNullString(query.FilterCreator),
 		FilterLicense: toNullString(query.FilterLicense),
+		FilterDate:    toNullString(query.FilterDate),
 		SortField:     primary.Field,
 		SortDesc:      primary.Desc,
 		SortField2:    secondary.Field,

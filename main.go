@@ -18,8 +18,12 @@ import (
 	"github.com/jxsl13/asset-service/config"
 	"github.com/jxsl13/asset-service/http/api"
 	httpserver "github.com/jxsl13/asset-service/http/server"
+	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
+	"github.com/jxsl13/asset-service/http/server/middleware/csrf"
+	"github.com/jxsl13/asset-service/http/server/middleware/htmx"
 	"github.com/jxsl13/asset-service/http/server/middleware/oidcauth"
-	"github.com/jxsl13/asset-service/pocketid"
+	"github.com/jxsl13/asset-service/http/server/middleware/ratelimit"
+	"github.com/jxsl13/asset-service/http/server/middleware/requestlog"
 	postgresql "github.com/jxsl13/asset-service/sql"
 )
 
@@ -71,7 +75,7 @@ func run() error {
 	}
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
-	srv, err := httpserver.New(sqlDB, queries, cfg.StoragePath, cfg.TempUploadPath, cfg.MaxStorageSize, cfg.AllowedResolutions, cfg.MaxUploadSizes, cfg.ThumbnailSizes)
+	srv, err := httpserver.New(sqlDB, queries, cfg.StoragePath, cfg.TempUploadPath, cfg.MaxStorageSize, cfg.AllowedResolutions, cfg.MaxUploadSizes, cfg.ThumbnailSizes, cfg.RateLimitMaxGroups, cfg.RateLimitWindow, cfg.AdminOnlyUpload, cfg.ItemsPerPage, cfg.Branding)
 	if err != nil {
 		return fmt.Errorf("server: %w", err)
 	}
@@ -80,83 +84,67 @@ func run() error {
 	r := chi.NewRouter()
 
 	// Structured request logging for every request.
-	r.Use(httpserver.RequestLogger)
+	r.Use(requestlog.Middleware)
 
 	// Extract client IP and store in context for audit logging.
-	r.Use(httpserver.ClientIPMiddleware)
+	r.Use(clientip.Middleware)
+
+	// Per-IP HTTP request rate limiter (token bucket). Disabled when rate == 0.
+	if cfg.HTTPRateLimitRate > 0 {
+		rl := ratelimit.New(ctx, cfg.HTTPRateLimitRate, cfg.HTTPRateLimitBurst, cfg.HTTPRateLimitCleanup)
+		r.Use(rl.Middleware)
+		slog.Info("HTTP rate limit enabled",
+			"rate_per_sec", cfg.HTTPRateLimitRate,
+			"burst", cfg.HTTPRateLimitBurst,
+			"cleanup", cfg.HTTPRateLimitCleanup,
+		)
+	}
 
 	// Parse HTMX request headers into context for all requests.
-	r.Use(httpserver.HtmxMiddleware)
-
-	// ── Pocket-ID provisioning ────────────────────────────────────────────────
-	// When a static API key is configured, auto-provision the OIDC client,
-	// admin group, and admin user on the Pocket-ID instance before starting
-	// the OIDC flow. Credentials are encrypted and persisted in the database
-	// so they survive restarts without re-provisioning.
-	if cfg.PocketIDStaticAPIKey != "" && cfg.OIDCIssuerURL != "" {
-		if cfg.PocketIDEncryptionKey == "" {
-			return fmt.Errorf("POCKET_ID_ENCRYPTION_KEY is required when POCKET_ID_STATIC_API_KEY is set")
-		}
-
-		provCfg := pocketid.Config{
-			BaseURL:            cfg.OIDCIssuerURL,
-			StaticAPIKey:       cfg.PocketIDStaticAPIKey,
-			ClientName:         cfg.PocketIDClientName,
-			CallbackURLs:       []string{cfg.OIDCRedirectURL},
-			LogoutCallbackURLs: []string{cfg.OIDCPostLogoutRedirectURL},
-			AdminEmail:         cfg.PocketIDAdminEmail,
-			AdminGroupName:     "admin",
-			EncryptionKey:      cfg.PocketIDEncryptionKey,
-			DB:                 sqlDB,
-			Insecure:           cfg.Insecure,
-		}
-
-		result, err := pocketid.Provision(ctx, provCfg)
-		if err != nil {
-			return fmt.Errorf("pocket-id provisioning: %w", err)
-		}
-
-		// Use provisioned credentials (overrides env values which may be stale).
-		cfg.OIDCClientID = result.ClientID
-		cfg.OIDCClientSecret = result.Secret
-	}
+	r.Use(htmx.Middleware)
 
 	// ── OIDC / Pocket-ID ──────────────────────────────────────────────────────
-	var auth *oidcauth.Provider
-	if cfg.OIDCIssuerURL != "" && cfg.OIDCClientID != "" {
-		oidcCfg := oidcauth.Config{
-			IssuerURL:             cfg.OIDCIssuerURL,
-			ClientID:              cfg.OIDCClientID,
-			ClientSecret:          cfg.OIDCClientSecret,
-			RedirectURL:           cfg.OIDCRedirectURL,
-			PostLogoutRedirectURL: cfg.OIDCPostLogoutRedirectURL,
-			CookieSecure:          !cfg.Insecure,
-			Insecure:              cfg.Insecure,
-			EnablePKCE:            true,
-		}
-		auth, err = oidcauth.NewProvider(ctx, oidcCfg)
-		if err != nil {
-			return fmt.Errorf("oidc provider: %w", err)
-		}
-
-		// Populate auth context on every request (anonymous users pass through).
-		// Must be registered before any routes per chi's middleware ordering rule.
-		r.Use(auth.OptionalAuth)
-
-		slog.Info("OIDC enabled", "issuer", cfg.OIDCIssuerURL)
-	} else {
-		slog.Info("OIDC disabled (OIDC_ISSUER_URL or OIDC_CLIENT_ID not set)")
+	auth, err := oidcauth.NewProvider(ctx, oidcauth.Config{
+		IssuerURL:             cfg.OIDCIssuerURL,
+		ClientID:              cfg.OIDCClientID,
+		ClientSecret:          cfg.OIDCClientSecret,
+		RedirectURL:           cfg.OIDCRedirectURL,
+		PostLogoutRedirectURL: cfg.OIDCPostLogoutRedirectURL,
+		CookieSecure:          !cfg.Insecure,
+		Insecure:              cfg.Insecure,
+		EnablePKCE:            true,
+	})
+	if err != nil {
+		return fmt.Errorf("oidc provider: %w", err)
 	}
 
-	// Auth flow endpoints (outside the middleware ordering, registered as routes).
-	if auth != nil {
-		r.Get("/auth/login", auth.LoginHandler())
-		r.Get("/auth/callback", auth.CallbackHandler())
-		r.Get("/auth/logout", auth.LogoutHandler())
-	}
+	// Populate auth context on every request (anonymous users pass through).
+	r.Use(auth.OptionalAuth)
+	slog.Info("OIDC enabled", "issuer", cfg.OIDCIssuerURL)
+
+	// CSRF protection (Double Submit Cookie).
+	// Must be after OIDC OptionalAuth so Bearer tokens can be detected and exempted.
+	r.Use(csrf.Middleware(!cfg.Insecure))
+
+	// Auth flow endpoints.
+	r.Get("/auth/login", auth.LoginHandler())
+	r.Get("/auth/callback", auth.CallbackHandler())
+	r.Get("/auth/logout", auth.LogoutHandler())
 
 	// Serve embedded static assets (htmx.min.js etc.).
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(httpserver.StaticFS())))
+
+	// Serve optional branding files (header image, favicon) from local paths.
+	if cfg.Branding.HeaderImagePath != "" {
+		r.Get("/branding/header-image", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, cfg.Branding.HeaderImagePath)
+		})
+	}
+	if cfg.Branding.FaviconPath != "" {
+		r.Get("/branding/favicon", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, cfg.Branding.FaviconPath)
+		})
+	}
 
 	// Mount all API + UI routes (generated from OpenAPI spec).
 	//
@@ -179,21 +167,19 @@ func run() error {
 		api.ChiServerOptions{BaseRouter: r},
 	)
 
-	// ── Admin routes (require OIDC + admin group) ─────────────────────────────
-	if auth != nil {
-		adminGroup := func(next http.Handler) http.Handler {
-			return auth.RequireGroup(next, "admin")
-		}
-		r.Route("/admin", func(sub chi.Router) {
-			sub.Use(adminGroup)
-			sub.Get("/{asset_type}/{group_id}/items", srv.AdminGetGroupItems)
-			sub.Get("/{asset_type}/{group_id}/metadata", srv.AdminGetGroupItemsMetadata)
-			sub.Delete("/{asset_type}/{group_id}", srv.AdminDeleteGroup)
-			sub.Delete("/{asset_type}/{group_id}/{item_id}", srv.AdminDeleteVariant)
-			sub.Patch("/{asset_type}/{group_id}", srv.AdminUpdateGroup)
-			sub.Put("/{asset_type}/{group_id}/{item_id}", srv.AdminReplaceVariant)
-		})
+	// ── Admin routes (require admin group) ────────────────────────────────────
+	adminGroup := func(next http.Handler) http.Handler {
+		return auth.RequireGroup(next, "admin")
 	}
+	r.Route("/admin", func(sub chi.Router) {
+		sub.Use(adminGroup)
+		sub.Get("/{asset_type}/{group_id}/items", srv.AdminGetGroupItems)
+		sub.Get("/{asset_type}/{group_id}/metadata", srv.AdminGetGroupItemsMetadata)
+		sub.Delete("/{asset_type}/{group_id}", srv.AdminDeleteGroup)
+		sub.Delete("/{asset_type}/{group_id}/{item_id}", srv.AdminDeleteVariant)
+		sub.Patch("/{asset_type}/{group_id}", srv.AdminUpdateGroup)
+		sub.Put("/{asset_type}/{group_id}/{item_id}", srv.AdminReplaceVariant)
+	})
 
 	httpSrv := &http.Server{
 		Addr:         cfg.Addr,

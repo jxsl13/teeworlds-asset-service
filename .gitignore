@@ -3,4 +3,7 @@ volumes/postgresql/*
 /testdata
 .DS_Store
 __debug_bin*
-asset-service
+/asset-service
+/seed-ddnet-skins
+/provision-pocketid
+

@@ -17,6 +17,7 @@ type Item struct {
 	GroupName string
 	GroupKey  string
 	Creators  string
+	License   string
 	Variants  string // comma-separated "uuid:value" pairs
 	TotalSize int64  // sum of all variant file sizes in bytes
 	CreatedAt time.Time
@@ -31,6 +32,7 @@ func ItemFromRow(row sqlc.SearchRow) Item {
 		GroupName: row.GroupName,
 		GroupKey:  row.GroupKey,
 		Creators:  row.Creators,
+		License:   row.License,
 		Variants:  row.Variants,
 		Score:     row.Sml,
 	}
@@ -45,6 +47,7 @@ func (item Item) ToAPI() api.SearchResult {
 		ItemValue: map[string]interface{}{
 			"name":     item.GroupName,
 			"creators": item.Creators,
+			"license":  item.License,
 		},
 	}
 }

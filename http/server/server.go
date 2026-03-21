@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/jxsl13/asset-service/config"
 	"github.com/jxsl13/asset-service/http/service"
@@ -29,19 +30,24 @@ func StaticFS() http.FileSystem {
 
 // Server holds the dependencies injected at startup and implements api.StrictServerInterface.
 type Server struct {
-	dao            sqlc.DAO
-	fsys           http.Dir
-	tmpDir         *os.Root
-	maxStorageSize int64
-	validator      *Validator
-	thumbnailSizes map[string]config.Resolution
-	layoutTpl      *template.Template
-	itemsTpl       *template.Template
+	dao                sqlc.DAO
+	fsys               http.Dir
+	tmpDir             *os.Root
+	maxStorageSize     int64
+	validator          *Validator
+	thumbnailSizes     map[string]config.Resolution
+	layoutTpl          *template.Template
+	itemsTpl           *template.Template
+	rateLimitMaxGroups int
+	rateLimitWindow    time.Duration
+	adminOnlyUpload    bool
+	itemsPerPage       int
+	branding           config.Branding
 }
 
 // New creates a Server from a *sql.DB and prepared *sqlc.Queries.
 // It opens tempUploadPath as a sandboxed os.Root for temporary upload files.
-func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath string, maxStorageSize int64, allowedResolutions map[string][]config.Resolution, maxUploadSizes map[string]int64, thumbnailSizes map[string]config.Resolution) (*Server, error) {
+func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath string, maxStorageSize int64, allowedResolutions map[string][]config.Resolution, maxUploadSizes map[string]int64, thumbnailSizes map[string]config.Resolution, rateLimitMaxGroups int, rateLimitWindow time.Duration, adminOnlyUpload bool, itemsPerPage int, branding config.Branding) (*Server, error) {
 	tmpRoot, err := os.OpenRoot(tempUploadPath)
 	if err != nil {
 		return nil, err
@@ -55,14 +61,19 @@ func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath stri
 		return nil, fmt.Errorf("parse items: %w", err)
 	}
 	return &Server{
-		dao:            sqlc.NewDAO(db, q),
-		fsys:           http.Dir(storagePath),
-		tmpDir:         tmpRoot,
-		maxStorageSize: maxStorageSize,
-		validator:      NewValidator(allowedResolutions, maxUploadSizes),
-		thumbnailSizes: thumbnailSizes,
-		layoutTpl:      layoutTpl,
-		itemsTpl:       itemsTpl,
+		dao:                sqlc.NewDAO(db, q),
+		fsys:               http.Dir(storagePath),
+		tmpDir:             tmpRoot,
+		maxStorageSize:     maxStorageSize,
+		validator:          NewValidator(allowedResolutions, maxUploadSizes),
+		thumbnailSizes:     thumbnailSizes,
+		layoutTpl:          layoutTpl,
+		itemsTpl:           itemsTpl,
+		rateLimitMaxGroups: rateLimitMaxGroups,
+		rateLimitWindow:    rateLimitWindow,
+		adminOnlyUpload:    adminOnlyUpload,
+		itemsPerPage:       itemsPerPage,
+		branding:           branding,
 	}, nil
 }
 

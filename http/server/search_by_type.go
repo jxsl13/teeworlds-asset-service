@@ -10,7 +10,7 @@ import (
 
 // SearchItemsByType implements api.StrictServerInterface.
 func (s *Server) SearchItemsByType(ctx context.Context, request api.SearchItemsByTypeRequestObject) (api.SearchItemsByTypeResponseObject, error) {
-	limit := 20
+	limit := s.itemsPerPage
 	if request.Params.Limit != nil {
 		limit = *request.Params.Limit
 	}

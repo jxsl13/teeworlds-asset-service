@@ -1,8 +1,14 @@
 /* ══════════════════════════════════════════════════════════════════════════════
-   Teeworlds Assets – Upload & UI logic
+   Teeworlds Asset Database – Upload & UI logic
    ══════════════════════════════════════════════════════════════════════════════ */
 
 /* global activeType is set by the template inline script */
+
+/* ── CSRF helper ────────────────────────────────────────────────────────────── */
+function getCSRFToken() {
+  var match = document.cookie.match('(?:^|; )__csrf=([^;]*)');
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
 /* ── Image preview ─────────────────────────────────────────────────────────── */
 function openPreview(src) {
@@ -51,6 +57,8 @@ function switchTab(btn) {
   currentSort = [{field: 'name', dir: 'asc'}];
   var sortInput = document.getElementById('searchSort');
   if (sortInput) sortInput.value = 'name:asc';
+  // Reset filter state when switching tabs
+  htmx.ajax('GET', '/' + activeType + '?limit=100&offset=0&sort=name:asc', '#content');
 }
 
 /* ── Column sorting ────────────────────────────────────────────────────────── */
@@ -61,6 +69,31 @@ function switchTab(btn) {
   - With Shift: clicking adds/toggles the column as a secondary sort (max 2).
 */
 var currentSort = [{field: 'name', dir: 'asc'}];
+
+/* Initialise currentSort + searchSort from the URL or the server-provided var */
+(function initSortFromURL() {
+  var sortParam = '';
+  try {
+    var params = new URLSearchParams(window.location.search);
+    sortParam = params.get('sort') || '';
+  } catch (_) { /* IE / about:blank */ }
+  if (!sortParam && typeof initialSort !== 'undefined') sortParam = initialSort;
+  if (sortParam) {
+    var parts = sortParam.split(',');
+    var parsed = [];
+    for (var i = 0; i < parts.length; i++) {
+      var pair = parts[i].split(':');
+      if (pair.length === 2 && (pair[1] === 'asc' || pair[1] === 'desc')) {
+        parsed.push({field: pair[0], dir: pair[1]});
+      }
+    }
+    if (parsed.length > 0) currentSort = parsed;
+  }
+  var sortInput = document.getElementById('searchSort');
+  if (sortInput) {
+    sortInput.value = currentSort.map(function (s) { return s.field + ':' + s.dir; }).join(',');
+  }
+})();
 
 function onSortClick(event, field) {
   var shift = event.shiftKey;
@@ -105,12 +138,56 @@ function applySortRequest() {
   // Keep the hidden sort input in sync so search requests include the sort.
   var sortInput = document.getElementById('searchSort');
   if (sortInput) sortInput.value = sortParam;
-  var url = '/' + activeType + '?limit=20&offset=0';
+  var url = '/' + activeType + '?limit=100&offset=0';
   var search = document.getElementById('search');
   var q = search ? search.value.trim() : '';
   if (q) url += '&q=' + encodeURIComponent(q);
   if (sortParam) url += '&sort=' + encodeURIComponent(sortParam);
   htmx.ajax('GET', url, '#content');
+}
+
+/* ── Filter by a table cell value ─────────────────────────────────────────── */
+/*
+  filterByCell(chipEl) — called from onclick="filterByCell(this)" on .filter-chip
+  spans in the items table. Clears the search query and fires a list request
+  filtered to this field/value. Preserves the active sort order.
+  Multiple filters can be stacked; re-clicking the same value is a no-op.
+*/
+function filterByCell(el) {
+  var field = el.dataset.field;
+  var value = el.dataset.value;
+  if (!field || !value) return;
+
+  // Clear the search input so the server runs ListItems (not fuzzy Search).
+  var search = document.getElementById('search');
+  if (search) search.value = '';
+
+  // Build from current URL so existing filters are preserved.
+  var params = new URLSearchParams(window.location.search);
+  params.set('offset', '0');
+  params.set(field, value);
+  // Ensure sort param stays in sync with JS state.
+  var sortInput = document.getElementById('searchSort');
+  if (sortInput && sortInput.value) params.set('sort', sortInput.value);
+  // Remove search query when filtering.
+  params.delete('q');
+
+  htmx.ajax('GET', '/' + activeType + '?' + params.toString(), '#content');
+}
+
+/* ── Clear active filters ──────────────────────────────────────────────────── */
+function clearFilter(field) {
+  var params = new URLSearchParams(window.location.search);
+  params.delete(field);
+  params.set('offset', '0');
+  htmx.ajax('GET', '/' + activeType + '?' + params.toString(), '#content');
+}
+
+function clearAllFilters() {
+  var params = new URLSearchParams(window.location.search);
+  ['creator', 'license', 'date'].forEach(function (f) { params.delete(f); });
+  params.set('offset', '0');
+  htmx.ajax('GET', '/' + activeType + '?' + params.toString(), '#content');
 }
 
 /* ── Shared helpers ────────────────────────────────────────────────────────── */
@@ -285,7 +362,10 @@ function renderUploadGroups() {
           '<select class="ui-license">' + licenseOptions + '</select>' +
         '</div>' +
       '</div>' +
-      '<div class="upload-group-files" id="upload-group-files-' + g.id + '"></div>' +
+      '<div class="upload-group-files" id="upload-group-files-' + g.id + '">' +
+        '<input type="file" multiple accept=".png,.map" style="display:none" id="upload-group-add-' + g.id + '" onchange="onGroupFilesSelected(this,' + g.id + ')">' +
+        '<button type="button" class="btn-add-variant" title="Add variant" onclick="document.getElementById(\'upload-group-add-' + g.id + '\').click()">&plus;</button>' +
+      '</div>' +
       '<div class="upload-group-status" id="upload-group-status-' + g.id + '"></div>';
 
     container.appendChild(div);
@@ -300,6 +380,10 @@ function renderGroupFiles(gid) {
   var g = uploadGroups[gid];
   var area = document.getElementById('upload-group-files-' + gid);
   if (!area) return;
+
+  /* Preserve the hidden input + add-button before clearing. */
+  var addInput = area.querySelector('input[type="file"]');
+  var addBtn   = area.querySelector('.btn-add-variant');
   area.innerHTML = '';
 
   g.fileIds.forEach(function (fid) {
@@ -332,6 +416,25 @@ function renderGroupFiles(gid) {
 
     area.appendChild(chip);
   });
+
+  /* Re-append the hidden input + add button so the '+' stays at the end. */
+  if (addInput) area.appendChild(addInput);
+  if (addBtn)   area.appendChild(addBtn);
+}
+
+/* ── Add files to a specific group ─────────────────────────────────────────── */
+function onGroupFilesSelected(input, gid) {
+  var files = Array.from(input.files);
+  input.value = '';
+  if (!files.length) return;
+  var g = uploadGroups[gid];
+  if (!g) return;
+  files.forEach(function (f) {
+    var fid = nextFileId++;
+    uploadFileMap[fid] = { id: fid, file: f, groupId: gid };
+    g.fileIds.push(fid);
+  });
+  renderGroupFiles(gid);
 }
 
 /* ── Group name live-edit ──────────────────────────────────────────────────── */
@@ -487,7 +590,7 @@ function submitAllUploads() {
     fd.append('metadata', new Blob([metadata], { type: 'application/json' }));
     fd.append('file', job.file);
 
-    fetch('/api/upload/' + encodeURIComponent(activeType), { method: 'POST', body: fd })
+    fetch('/api/upload/' + encodeURIComponent(activeType), { method: 'POST', body: fd, headers: { 'X-CSRF-Token': getCSRFToken() } })
     .then(function (resp) {
       return resp.json().then(function (body) {
         if (!resp.ok) throw new Error(body.error || 'Upload failed');
@@ -533,7 +636,7 @@ function submitAllUploads() {
 
 function adminDeleteGroup(assetType, groupID, name) {
   if (!confirm('Delete "' + name + '" and all its variants? This cannot be undone.')) return;
-  fetch('/admin/' + assetType + '/' + groupID, { method: 'DELETE' })
+  fetch('/admin/' + assetType + '/' + groupID, { method: 'DELETE', headers: { 'X-CSRF-Token': getCSRFToken() } })
     .then(function (res) {
       if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
       var row = document.querySelector('tr[data-group-id="' + groupID + '"]');
@@ -547,7 +650,7 @@ var editItems = [];      // { item_id, group_value, size, original_filename }
 var editPendingFiles = []; // File objects to upload after save
 var editTagInput = null;
 
-function openEditModal(assetType, groupID, name, creators) {
+function openEditModal(assetType, groupID, name, creators, license) {
   document.getElementById('editAssetType').value = assetType;
   document.getElementById('editGroupID').value = groupID;
   document.getElementById('editName').value = name;
@@ -579,6 +682,11 @@ function openEditModal(assetType, groupID, name, creators) {
     initTagInput(tagContainer);
     editTagInput = true;
   }
+
+  // Populate and pre-select the license dropdown
+  var licSel = document.getElementById('editLicense');
+  licSel.innerHTML = licenseOptions;
+  licSel.value = license || 'unknown';
 
   // Show modal, then fetch items
   document.getElementById('editModal').classList.add('open');
@@ -656,7 +764,7 @@ function deleteEditItem(itemID, chipEl) {
   var groupID = document.getElementById('editGroupID').value;
 
   chipEl.classList.add('dragging'); // dim it
-  fetch('/admin/' + assetType + '/' + groupID + '/' + itemID, { method: 'DELETE' })
+  fetch('/admin/' + assetType + '/' + groupID + '/' + itemID, { method: 'DELETE', headers: { 'X-CSRF-Token': getCSRFToken() } })
     .then(function (res) {
       if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
       editItems = editItems.filter(function (it) { return it.item_id !== itemID; });
@@ -682,6 +790,7 @@ function submitEdit() {
   var groupID = document.getElementById('editGroupID').value;
   var name = document.getElementById('editName').value.trim();
   var creators = getTagValues(document.getElementById('editCreatorsTag'));
+  var license = document.getElementById('editLicense').value;
   var status = document.getElementById('editStatus');
 
   if (!name) { status.textContent = 'Name is required'; status.className = 'upload-status error'; return; }
@@ -689,17 +798,17 @@ function submitEdit() {
   status.textContent = 'Saving\u2026';
   status.className = 'upload-status';
 
-  // 1. Save metadata (name + creators)
+  // 1. Save metadata (name + creators + license)
   fetch('/admin/' + assetType + '/' + groupID, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name, creators: creators })
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRFToken() },
+    body: JSON.stringify({ name: name, creators: creators, license: license })
   })
   .then(function (res) {
     if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
     // 2. Upload pending files (if any)
     if (editPendingFiles.length === 0) return Promise.resolve();
-    return uploadPendingFiles(assetType, name, creators);
+    return uploadPendingFiles(assetType, name, creators, license);
   })
   .then(function () {
     status.textContent = 'Saved!';
@@ -715,16 +824,16 @@ function submitEdit() {
   });
 }
 
-function uploadPendingFiles(assetType, name, creators) {
+function uploadPendingFiles(assetType, name, creators, license) {
   var chain = Promise.resolve();
   editPendingFiles.forEach(function (file) {
     chain = chain.then(function () {
-      var meta = JSON.stringify({ name: name, creators: creators, license: 'unknown' });
+      var meta = JSON.stringify({ name: name, creators: creators, license: license || 'unknown' });
       var form = new FormData();
       var metaBlob = new Blob([meta], { type: 'application/json' });
       form.append('metadata', metaBlob, 'metadata.json');
       form.append('file', file);
-      return fetch('/api/upload/' + encodeURIComponent(assetType), { method: 'POST', body: form })
+      return fetch('/api/upload/' + encodeURIComponent(assetType), { method: 'POST', body: form, headers: { 'X-CSRF-Token': getCSRFToken() } })
         .then(function (res) {
           if (!res.ok) return res.json().then(function (j) { throw new Error(j.error || 'Upload failed'); });
         });
@@ -798,3 +907,102 @@ function metaRow(label, value) {
   var display = value ? escapeHtml(value) : '<span class="text-dim">\u2014</span>';
   return '<tr><td class="metadata-label">' + escapeHtml(label) + '</td><td class="metadata-value">' + display + '</td></tr>';
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Multi-select & bulk download
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+var selectedGroups = {};  // groupId → true
+
+function toggleRowSelect(cb) {
+  var gid = cb.getAttribute('data-group-id');
+  if (cb.checked) {
+    selectedGroups[gid] = true;
+  } else {
+    delete selectedGroups[gid];
+  }
+  cb.closest('tr').classList.toggle('row-selected', cb.checked);
+  updateSelectionBar();
+}
+
+function toggleSelectAll(cb) {
+  var boxes = document.querySelectorAll('.row-select');
+  boxes.forEach(function (box) {
+    box.checked = cb.checked;
+    var gid = box.getAttribute('data-group-id');
+    if (cb.checked) {
+      selectedGroups[gid] = true;
+    } else {
+      delete selectedGroups[gid];
+    }
+    box.closest('tr').classList.toggle('row-selected', cb.checked);
+  });
+  updateSelectionBar();
+}
+
+function clearSelection() {
+  selectedGroups = {};
+  var boxes = document.querySelectorAll('.row-select');
+  boxes.forEach(function (box) {
+    box.checked = false;
+    box.closest('tr').classList.remove('row-selected');
+  });
+  var sa = document.getElementById('selectAll');
+  if (sa) sa.checked = false;
+  updateSelectionBar();
+}
+
+function updateSelectionBar() {
+  var ids = Object.keys(selectedGroups);
+  var bar = document.getElementById('selectionBar');
+  if (!bar) return;
+  if (ids.length === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = '';
+  document.getElementById('selectionCount').textContent = ids.length + ' selected';
+}
+
+function downloadSelected() {
+  var ids = Object.keys(selectedGroups);
+  if (ids.length === 0) return;
+  var body = JSON.stringify({ group_ids: ids });
+  fetch('/api/download/bundle', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': getCSRFToken()
+    },
+    body: body
+  }).then(function (resp) {
+    if (!resp.ok) {
+      return resp.json().then(function (e) { alert(e.error || 'Download failed'); });
+    }
+    return resp.blob().then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'assets.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+  });
+}
+
+/* Restore checkbox state after HTMX content swaps */
+document.addEventListener('htmx:afterSwap', function (e) {
+  if (e.detail.target.id !== 'content') return;
+  var ids = Object.keys(selectedGroups);
+  if (ids.length === 0) return;
+  ids.forEach(function (gid) {
+    var cb = document.querySelector('.row-select[data-group-id="' + gid + '"]');
+    if (cb) {
+      cb.checked = true;
+      cb.closest('tr').classList.add('row-selected');
+    }
+  });
+  updateSelectionBar();
+});

@@ -10,7 +10,7 @@ import (
 
 // ListItems implements api.StrictServerInterface.
 func (s *Server) ListItems(ctx context.Context, request api.ListItemsRequestObject) (api.ListItemsResponseObject, error) {
-	limit := 20
+	limit := s.itemsPerPage
 	if request.Params.Limit != nil {
 		limit = *request.Params.Limit
 	}
@@ -41,6 +41,7 @@ func (s *Server) ListItems(ctx context.Context, request api.ListItemsRequestObje
 		request.Params.Name,
 		request.Params.Creator,
 		license,
+		nil,
 		[]model.SortDirective{{Field: sortField, Desc: sortDesc}},
 	)
 	if err != nil {

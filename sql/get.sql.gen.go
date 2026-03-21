@@ -10,6 +10,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 const getGroupFilePath = `-- name: GetGroupFilePath :one
@@ -176,4 +177,53 @@ func (q *Queries) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnail
 	var item_thumbnail_path sql.NullString
 	err := row.Scan(&item_thumbnail_path)
 	return item_thumbnail_path, err
+}
+
+const getMultiGroupFiles = `-- name: GetMultiGroupFiles :many
+SELECT ag.asset_type,
+       ag.group_name,
+       ai.group_value,
+       ai.item_file_path,
+       ai.original_filename
+FROM   asset_item ai
+JOIN   asset_group ag ON ai.group_id = ag.group_id
+WHERE  ai.group_id = ANY($1::uuid[])
+ORDER BY ag.asset_type, ag.group_name, ai.size ASC
+`
+
+type GetMultiGroupFilesRow struct {
+	AssetType        AssetTypeEnum `db:"asset_type"`
+	GroupName        string        `db:"group_name"`
+	GroupValue       string        `db:"group_value"`
+	ItemFilePath     string        `db:"item_file_path"`
+	OriginalFilename string        `db:"original_filename"`
+}
+
+func (q *Queries) GetMultiGroupFiles(ctx context.Context, dollar_1 []uuid.UUID) ([]GetMultiGroupFilesRow, error) {
+	rows, err := q.query(ctx, q.getMultiGroupFilesStmt, getMultiGroupFiles, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetMultiGroupFilesRow{}
+	for rows.Next() {
+		var i GetMultiGroupFilesRow
+		if err := rows.Scan(
+			&i.AssetType,
+			&i.GroupName,
+			&i.GroupValue,
+			&i.ItemFilePath,
+			&i.OriginalFilename,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
