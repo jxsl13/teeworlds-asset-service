@@ -131,8 +131,8 @@ func run() error {
 	r.Get("/auth/callback", auth.CallbackHandler())
 	r.Get("/auth/logout", auth.LogoutHandler())
 
-	// Serve embedded static assets (htmx.min.js etc.).
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(httpserver.StaticFS())))
+	// Serve embedded static assets with content-based ETags (cache warmed at startup).
+	r.Handle("/static/*", http.StripPrefix("/static/", httpserver.NewStaticHandler()))
 
 	// Serve optional branding files (header image, favicon) from local paths.
 	if cfg.Branding.HeaderImagePath != "" {
