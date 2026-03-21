@@ -134,13 +134,16 @@ test.describe("Non-admin UI – responsive layout", () => {
     if ((await checkbox.count()) > 0) {
       // Use JS to toggle the checkbox and call its onchange handler,
       // avoiding mobile touch-event issues with Playwright.
+      // The global functions are defined in upload.js and attached to window.
       await page.evaluate(() => {
+        const w = window as Window & { toggleRowSelect?: (cb: HTMLInputElement) => void; clearSelection?: () => void };
         const cb = document.querySelector(".row-select") as HTMLInputElement;
-        if (cb) { cb.checked = true; (window as any).toggleRowSelect(cb); }
+        if (cb && w.toggleRowSelect) { cb.checked = true; w.toggleRowSelect(cb); }
       });
       await expect(page.locator("#selectionBar")).toBeVisible({ timeout: 3000 });
       await page.evaluate(() => {
-        (window as any).clearSelection();
+        const w = window as Window & { clearSelection?: () => void };
+        if (w.clearSelection) w.clearSelection();
       });
       await expect(page.locator("#selectionBar")).toBeHidden();
     }

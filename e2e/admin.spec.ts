@@ -1,7 +1,19 @@
 import { test, expect } from "@playwright/test";
 
-// Helper: click the first element matching `selector` via JavaScript,
-// bypassing Playwright's strict-mode and mobile touch/actionability checks.
+/**
+ * Click the first element matching `selector` via JavaScript `el.click()`.
+ *
+ * On mobile viewports Playwright emulates touch events (`isMobile: true`),
+ * which can cause standard `.click()` to time out when the element's
+ * `onclick` handler expects a mouse-click event, or when strict-mode
+ * rejects a selector that matches multiple elements.  This helper bypasses
+ * Playwright's actionability checks and triggers a real DOM click event,
+ * which reliably fires `onclick` handlers on both desktop and mobile.
+ *
+ * Use this instead of `page.locator(selector).click()` when:
+ * - the target has an inline `onclick` attribute (buttons, modals), or
+ * - the selector matches more than one element and you want the first.
+ */
 async function jsClick(page: import("@playwright/test").Page, selector: string) {
   await page.waitForSelector(selector, { state: "attached" });
   await page.evaluate((sel) => {
