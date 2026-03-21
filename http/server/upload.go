@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -145,10 +146,9 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		return api.UploadItem400JSONResponse{Error: fmt.Sprintf("unknown asset type %q", request.AssetType)}, nil
 	}
 
-	// ── Move to permanent storage ────────────────────────────────────────────
-	if err := s.moveToStorage(uc); err != nil {
-		return nil, err
-	}
+	// The per-type handler (via persistUpload) has already committed the DB
+	// transaction and moved the files to permanent storage. Mark as committed
+	// so the deferred cleanupTemp is skipped (temp files were already moved).
 	committed = true
 
 	return api.UploadItem201JSONResponse{ItemId: itemID}, nil
@@ -369,10 +369,19 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 				return err
 			}
 		}
+
+		// Move files to permanent storage inside the transaction so that
+		// the DB changes are rolled back if the move fails.
+		if err := s.moveToStorage(uc); err != nil {
+			return err
+		}
 		return nil
 	})
 
 	if txErr != nil {
+		// If the transaction failed after files were moved (e.g. commit
+		// error), clean up any already-moved files so nothing is orphaned.
+		s.cleanupStorage(uc)
 		return s.classifyUploadError(ctx, txErr, uc.checksum)
 	}
 	return nil, nil
@@ -391,6 +400,17 @@ func (s *Server) moveToStorage(uc *uploadContext) error {
 		}
 	}
 	return nil
+}
+
+// cleanupStorage removes any files that moveToStorage may have already placed
+// in permanent storage. This is a best-effort operation used when the DB
+// transaction fails after files were moved (e.g. commit error).
+func (s *Server) cleanupStorage(uc *uploadContext) {
+	_ = os.Remove(uc.absPath)
+	if uc.hasTempThumb {
+		thumbAbsPath := filepath.Join(string(s.fsys), filepath.FromSlash(uc.thumbnailPath.String))
+		_ = os.Remove(thumbAbsPath)
+	}
 }
 
 // ── thumbnail generation ──────────────────────────────────────────────────────
@@ -512,11 +532,48 @@ func (s *Server) cleanupTemp(uc *uploadContext) {
 }
 
 // moveFile moves a file from the sandboxed tmpDir into absPath, creating parent dirs.
+// If the source and destination are on different devices (cross-device link),
+// it falls back to copying the file and removing the source.
 func moveFile(tmpDir *os.Root, tmpName, absPath string) error {
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o750); err != nil {
 		return err
 	}
-	return os.Rename(filepath.Join(tmpDir.Name(), tmpName), absPath)
+	srcPath := filepath.Join(tmpDir.Name(), tmpName)
+	err := os.Rename(srcPath, absPath)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+	// Cross-device link: fall back to copy + delete.
+	return copyAndRemove(srcPath, absPath)
+}
+
+// copyAndRemove copies src to dst and removes src. If the copy fails the
+// partially written dst is removed so no garbage is left behind.
+func copyAndRemove(src, dst string) error {
+	sf, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+
+	df, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(df, sf); err != nil {
+		_ = df.Close()
+		_ = os.Remove(dst)
+		return err
+	}
+	if err := df.Close(); err != nil {
+		_ = os.Remove(dst)
+		return err
+	}
+	return os.Remove(src)
 }
 
 // classifyUploadError maps known DB/domain errors to the appropriate HTTP response.
