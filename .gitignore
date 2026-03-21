@@ -6,6 +6,7 @@ __debug_bin*
 /asset-service
 /seed-ddnet-skins
 /provision-pocketid
+/e2e-server
 
 # Node / Playwright
 node_modules/

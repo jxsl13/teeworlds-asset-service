@@ -727,6 +727,7 @@ a:hover { color: var(--link-hover); }
     -webkit-overflow-scrolling: touch;
     flex-wrap: nowrap;
     scrollbar-width: none;
+    max-width: 100%;
   }
   .tabs::-webkit-scrollbar { display: none; }
   .tab { flex-shrink: 0; padding: 0.45rem 0.7rem; font-size: 0.75rem; }
@@ -782,8 +783,8 @@ a:hover { color: var(--link-hover); }
 
   /* Card-based layout for very small screens */
   .items-table { display: block; overflow-x: visible; border: none; box-shadow: none; background: transparent; }
-  .items-table thead { display: none; }
-  .items-table tbody { display: block; width: 100%; }
+  .items-table thead { display: none; min-width: 0; }
+  .items-table tbody { display: block; width: 100%; min-width: 0; }
   .items-table tr {
     display: flex;
     flex-wrap: wrap;

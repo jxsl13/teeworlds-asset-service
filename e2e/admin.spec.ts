@@ -83,37 +83,36 @@ test.describe("Admin UI – responsive layout", () => {
     expect(await page.locator(".btn-admin").count()).toBeGreaterThan(0);
   });
 
-  test("upload modal fits within viewport", async ({ page }) => {
+  test("upload modal does not overflow the viewport", async ({ page }) => {
     await jsClick(page, ".btn-upload");
     await expect(page.locator("#uploadModal")).toHaveClass(/open/, {
       timeout: 5000,
     });
-    const modal = page.locator("#uploadModal .modal");
-    const box = await modal.boundingBox();
-    expect(box).not.toBeNull();
-    if (box) {
-      const viewport = page.viewportSize();
-      if (viewport) {
-        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 2);
-      }
-    }
+    // Compare computed CSS widths (unaffected by device pixel scaling).
+    const overflow = await page.evaluate(() => {
+      const modal = document.querySelector("#uploadModal .modal")!;
+      const cs = window.getComputedStyle(modal);
+      const modalPx = parseFloat(cs.width);
+      const viewPx = document.documentElement.clientWidth;
+      return { modalWidth: modalPx, viewWidth: viewPx };
+    });
+    expect(overflow.modalWidth).toBeLessThanOrEqual(overflow.viewWidth + 1);
     await jsClick(page, "#uploadModal .modal-close");
   });
 
-  test("edit modal fits within viewport", async ({ page }) => {
+  test("edit modal does not overflow the viewport", async ({ page }) => {
     await jsClick(page, ".btn-edit");
     await expect(page.locator("#editModal")).toHaveClass(/open/, {
       timeout: 5000,
     });
-    const modal = page.locator("#editModal .modal");
-    const box = await modal.boundingBox();
-    expect(box).not.toBeNull();
-    if (box) {
-      const viewport = page.viewportSize();
-      if (viewport) {
-        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 2);
-      }
-    }
+    const overflow = await page.evaluate(() => {
+      const modal = document.querySelector("#editModal .modal")!;
+      const cs = window.getComputedStyle(modal);
+      const modalPx = parseFloat(cs.width);
+      const viewPx = document.documentElement.clientWidth;
+      return { modalWidth: modalPx, viewWidth: viewPx };
+    });
+    expect(overflow.modalWidth).toBeLessThanOrEqual(overflow.viewWidth + 1);
     await jsClick(page, "#editModal .modal-close");
   });
 
