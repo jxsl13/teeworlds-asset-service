@@ -146,6 +146,9 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		return api.UploadItem400JSONResponse{Error: fmt.Sprintf("unknown asset type %q", request.AssetType)}, nil
 	}
 
+	// The per-type handler (via persistUpload) has already committed the DB
+	// transaction and moved the files to permanent storage. Mark as committed
+	// so the deferred cleanupTemp is skipped (temp files were already moved).
 	committed = true
 
 	return api.UploadItem201JSONResponse{ItemId: itemID}, nil
