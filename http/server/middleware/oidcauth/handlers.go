@@ -21,9 +21,12 @@ func (p *Provider) LoginHandler() http.HandlerFunc {
 		sess.Nonce = nonce
 		sess.CodeVerifier = codeVerifier
 
-		// Allow callers to specify where to redirect after login
+		// Allow callers to specify where to redirect after login.
+		// Only accept relative paths to prevent open redirect.
 		if returnTo := r.URL.Query().Get("return_to"); returnTo != "" {
-			sess.ReturnTo = returnTo
+			if strings.HasPrefix(returnTo, "/") && !strings.HasPrefix(returnTo, "//") {
+				sess.ReturnTo = returnTo
+			}
 		}
 
 		p.store.set(sessionID, sess)
@@ -118,8 +121,9 @@ func (p *Provider) CallbackHandler() http.HandlerFunc {
 		p.store.set(cookie.Value, sess)
 		setSessionCookie(w, p.config.SessionCookieName, cookie.Value, p.config.SessionMaxAge, p.config.CookieSecure, p.config.CookieDomain)
 
-		// Redirect to the original page or home
-		if returnTo == "" {
+		// Redirect to the original page or home.
+		// Validate to prevent open redirects (defence-in-depth).
+		if returnTo == "" || !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
 			returnTo = "/"
 		}
 		http.Redirect(w, r, returnTo, http.StatusFound)
@@ -142,7 +146,7 @@ func (p *Provider) LogoutHandler() http.HandlerFunc {
 		target := "/"
 		if returnTo := r.URL.Query().Get("return_to"); returnTo != "" {
 			// Only accept relative paths to prevent open redirect.
-			if strings.HasPrefix(returnTo, "/") {
+			if strings.HasPrefix(returnTo, "/") && !strings.HasPrefix(returnTo, "//") {
 				target = returnTo
 			}
 		}

@@ -143,7 +143,7 @@
   </div>
 
   <footer class="site-footer">
-    {{if not .UserName}}<a href="/auth/login">Login</a>{{end}}
+    {{if not .UserName}}<a href="/auth/login" onclick="this.href='/auth/login?return_to='+encodeURIComponent(window.location.pathname+window.location.search)">Login</a>{{end}}
   </footer>
 
   <script>
