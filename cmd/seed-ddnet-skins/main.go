@@ -291,8 +291,10 @@ func mapLicense(ddnetLicense string) string {
 		return "gpl-3"
 	case normalized == "mit":
 		return "mit"
+	case normalized == "apache-2" || normalized == "apache 2.0" || normalized == "apache-2.0":
+		return "apache-2"
 	case normalized == "zlib":
-		return "custom"
+		return "zlib"
 	case normalized == "unknown" || normalized == "":
 		return "unknown"
 	default:

@@ -684,6 +684,8 @@ components:
         - gpl-2        – GNU General Public License v2
         - gpl-3        – GNU General Public License v3
         - mit          – MIT License
+        - apache-2     – Apache License 2.0
+        - zlib         – zlib License
         - custom       – Custom / other known license
         - unknown      – License not specified
       enum:
@@ -697,6 +699,8 @@ components:
         - gpl-2
         - gpl-3
         - mit
+        - apache-2
+        - zlib
         - custom
         - unknown
 

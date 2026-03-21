@@ -202,6 +202,8 @@ var licenseOptions =
   '<option value="gpl-2">GPL v2</option>' +
   '<option value="gpl-3">GPL v3</option>' +
   '<option value="mit">MIT</option>' +
+  '<option value="apache-2">Apache 2.0</option>' +
+  '<option value="zlib">zlib</option>' +
   '<option value="custom">Custom / Other</option>' +
   '<option value="unknown">Unknown</option>';
 

@@ -45,6 +45,7 @@ func (e ItemType) Valid() bool {
 
 // Defines values for License.
 const (
+	Apache2  License = "apache-2"
 	Cc0      License = "cc0"
 	CcBy     License = "cc-by"
 	CcByNc   License = "cc-by-nc"
@@ -57,11 +58,14 @@ const (
 	Gpl3     License = "gpl-3"
 	Mit      License = "mit"
 	Unknown  License = "unknown"
+	Zlib     License = "zlib"
 )
 
 // Valid indicates whether the value is a known member of the License enum.
 func (e License) Valid() bool {
 	switch e {
+	case Apache2:
+		return true
 	case Cc0:
 		return true
 	case CcBy:
@@ -85,6 +89,8 @@ func (e License) Valid() bool {
 	case Mit:
 		return true
 	case Unknown:
+		return true
+	case Zlib:
 		return true
 	default:
 		return false
@@ -149,6 +155,8 @@ type ItemMetadata struct {
 	// - gpl-2        – GNU General Public License v2
 	// - gpl-3        – GNU General Public License v3
 	// - mit          – MIT License
+	// - apache-2     – Apache License 2.0
+	// - zlib         – zlib License
 	// - custom       – Custom / other known license
 	// - unknown      – License not specified
 	License License `json:"license"`
@@ -177,6 +185,8 @@ type ItemTypesResponse struct {
 // - gpl-2        – GNU General Public License v2
 // - gpl-3        – GNU General Public License v3
 // - mit          – MIT License
+// - apache-2     – Apache License 2.0
+// - zlib         – zlib License
 // - custom       – Custom / other known license
 // - unknown      – License not specified
 type License string
