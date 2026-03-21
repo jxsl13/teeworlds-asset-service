@@ -58,11 +58,10 @@ Each variable below can be suffixed with the asset type in uppercase:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
+| `EXTERNAL_URL` | **yes** | — | Publicly reachable base URL of this service (e.g. `https://assets.example.com`); OIDC callback URLs (`/auth/callback`, `/auth/post-logout`) are derived from this |
 | `OIDC_ISSUER_URL` | **yes** | — | Pocket-ID base URL (e.g. `https://id.example.com`) |
 | `OIDC_CLIENT_ID` | **yes** | — | OIDC client ID (from `cmd/provision-pocketid`) |
 | `OIDC_CLIENT_SECRET` | **yes** | — | OIDC client secret (from `cmd/provision-pocketid`) |
-| `OIDC_REDIRECT_URL` | **yes** | — | OAuth2 callback URL (e.g. `https://assets.example.com/auth/callback`) |
-| `OIDC_POST_LOGOUT_REDIRECT_URL` | no | — | Post-logout redirect URL (e.g. `https://assets.example.com`) |
 
 ### Rate Limiting
 
@@ -83,6 +82,8 @@ Run `cmd/provision-pocketid` once to create the OIDC client, admin group, admin 
 | `POCKET_ID_STATIC_API_KEY` | **yes** | — | Pocket-ID admin API key |
 | `POCKET_ID_ADMIN_EMAIL` | no | `admin@example.com` | Email for the initial admin user in Pocket-ID |
 | `POCKET_ID_CLIENT_NAME` | no | `Teeworlds Asset Database` | Display name for the OIDC client in Pocket-ID |
+
+> **Note:** `cmd/provision-pocketid` also reads `OIDC_ISSUER_URL` and `EXTERNAL_URL` from the server configuration above.
 
 ## CLI Commands
 
@@ -186,6 +187,5 @@ MAX_STORAGE_SIZE=50GiB
 OIDC_ISSUER_URL=https://<your-pocket-id-domain>
 OIDC_CLIENT_ID=<from provision output>
 OIDC_CLIENT_SECRET=<from provision output>
-OIDC_REDIRECT_URL=https://<your-asset-service-domain>/auth/callback
-OIDC_POST_LOGOUT_REDIRECT_URL=https://<your-asset-service-domain>
+EXTERNAL_URL=https://<your-asset-service-domain>
 ```
