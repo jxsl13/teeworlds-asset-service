@@ -143,12 +143,25 @@
   </div>
 
   <footer class="site-footer">
-    {{if not .UserName}}<a href="/auth/login">Login</a>{{end}}
+    {{if not .UserName}}<a href="/auth/login" id="loginLink">Login</a>{{end}}
   </footer>
 
   <script>
     var activeType = '{{.ActiveType}}';
     var initialSort = '{{.SortParam}}';
+
+    // Keep the Login link's href in sync with the current URL so that
+    // right-click / middle-click also capture the return_to parameter.
+    (function() {
+      var link = document.getElementById('loginLink');
+      if (!link) return;
+      function update() {
+        link.href = '/auth/login?return_to=' + encodeURIComponent(window.location.pathname + window.location.search);
+      }
+      update();
+      document.body.addEventListener('htmx:pushedIntoHistory', update);
+      document.body.addEventListener('htmx:replacedInHistory', update);
+    })();
   </script>
   <script src="/static/upload.js"></script>
 </body>
