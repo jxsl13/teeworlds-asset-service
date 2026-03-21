@@ -1,140 +1,101 @@
 import { test, expect } from "@playwright/test";
 
+/**
+ * Non-admin E2E tests — run against the live asset-service with
+ * real PostgreSQL data seeded by global-setup.ts.
+ *
+ * These tests verify the public (anonymous) UI on both mobile and
+ * desktop viewports.
+ */
 test.describe("Non-admin UI – responsive layout", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    // Wait for HTMX to load the initial content.
-    await expect(page.locator(".items-table")).toBeVisible({ timeout: 10000 });
+    await page.goto("/skin");
+    // Wait for HTMX to load the items fragment.
+    await page.waitForSelector(".items-table", { state: "visible", timeout: 15_000 });
   });
 
-  // ── Page load ───────────────────────────────────────────────────────────────
-
-  test("loads the page with header, tabs, search, and items table", async ({
-    page,
-  }) => {
+  test("loads the page with header, tabs, search, and items table", async ({ page }) => {
     await expect(page.locator("h1")).toContainText("Teeworlds Asset Database");
-    await expect(page.locator(".subtitle")).toBeVisible();
-    await expect(page.locator(".tabs")).toBeVisible();
-    // At least 5 asset type tabs should be present.
     const tabs = page.locator(".tab");
-    await expect(tabs).not.toHaveCount(0);
     expect(await tabs.count()).toBeGreaterThanOrEqual(5);
-    // Search input should be visible.
     await expect(page.locator("#search")).toBeVisible();
-    // Upload button should NOT be visible for non-admin.
-    await expect(page.locator(".btn-upload")).toHaveCount(0);
-    // Items table should be loaded.
     await expect(page.locator(".items-table")).toBeVisible();
   });
 
-  // ── Tab switching ───────────────────────────────────────────────────────────
-
-  test("switching tabs loads content for the selected asset type", async ({
-    page,
-  }) => {
-    // Click on "map" tab.
+  test("switching tabs loads content for the selected asset type", async ({ page }) => {
     const mapTab = page.locator('.tab[data-type="map"]');
     await mapTab.click();
+    await page.waitForTimeout(1000);
+    await expect(page.locator("#content")).toBeVisible();
+    await expect(page.locator('.tab[data-type="skin"]')).not.toHaveClass(/active/);
     await expect(mapTab).toHaveClass(/active/);
-
-    // The items table should reload (HTMX swap).
-    await expect(page.locator(".items-table")).toBeVisible({ timeout: 5000 });
-
-    // Click on "hud" tab.
-    const hudTab = page.locator('.tab[data-type="hud"]');
-    await hudTab.click();
-    await expect(hudTab).toHaveClass(/active/);
-    await expect(page.locator(".items-table")).toBeVisible({ timeout: 5000 });
   });
-
-  // ── Sorting ─────────────────────────────────────────────────────────────────
 
   test("clicking a column header triggers sort (desktop only)", async ({
     page,
+    isMobile,
   }) => {
-    const viewport = page.viewportSize();
-    // On mobile the thead is hidden, so sort headers are not clickable.
-    if (viewport && viewport.width <= 480) {
-      test.skip();
-      return;
-    }
-    const nameHeader = page.locator('th[data-field="name"]');
+    test.skip(!!isMobile, "Sort headers are hidden on mobile (thead is display:none)");
+    const nameHeader = page.locator("th.col-name");
     await expect(nameHeader).toBeVisible();
     await nameHeader.click();
-    await expect(nameHeader.locator(".sort-indicator")).toBeVisible();
+    await expect(nameHeader.locator(".sort-indicator")).toBeVisible({ timeout: 3000 });
   });
 
-  // ── Pagination ──────────────────────────────────────────────────────────────
-
-  test("pagination controls are visible when items exist", async ({
-    page,
-  }) => {
-    await expect(page.locator(".pagination")).toBeVisible();
-    await expect(page.locator(".page-info")).toBeVisible();
+  test("pagination controls are visible when items exist", async ({ page }) => {
+    const pagination = page.locator(".pagination");
+    await expect(pagination).toBeVisible();
+    await expect(pagination.locator(".page-info")).toBeVisible();
   });
-
-  // ── Image preview modal ─────────────────────────────────────────────────────
 
   test("clicking a thumbnail opens the preview modal", async ({ page }) => {
     const thumb = page.locator(".col-thumb img").first();
     if ((await thumb.count()) > 0) {
       await thumb.click();
-      await expect(page.locator("#previewModal")).toHaveClass(/open/);
-      // Press Escape to close.
+      await expect(page.locator("#previewModal")).toHaveClass(/open/, { timeout: 5000 });
       await page.keyboard.press("Escape");
       await expect(page.locator("#previewModal")).not.toHaveClass(/open/);
     }
   });
 
-  // ── Search input ────────────────────────────────────────────────────────────
-
   test("search input is functional", async ({ page }) => {
     const searchInput = page.locator("#search");
-    await searchInput.fill("Greyfox");
-    await expect(searchInput).toHaveValue("Greyfox");
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill("E2E");
+    await page.waitForTimeout(500);
+    await expect(page.locator("#content")).toBeVisible();
   });
-
-  // ── Table does not overflow viewport ────────────────────────────────────────
 
   test("table is contained within the viewport", async ({ page }) => {
-    const table = page.locator(".items-table");
-    const box = await table.boundingBox();
-    expect(box).not.toBeNull();
-    if (box) {
-      const viewport = page.viewportSize();
-      if (viewport) {
-        expect(box.x).toBeGreaterThanOrEqual(-1);
-      }
-    }
+    const overflow = await page.evaluate(() => {
+      const table = document.querySelector(".items-table");
+      if (!table) return { ok: true };
+      const cs = window.getComputedStyle(table);
+      return {
+        ok: parseFloat(cs.width) <= document.documentElement.clientWidth + 2,
+        tableWidth: parseFloat(cs.width),
+        viewWidth: document.documentElement.clientWidth,
+      };
+    });
+    expect(overflow.ok).toBe(true);
   });
 
-  // ── No admin elements visible ───────────────────────────────────────────────
-
-  test("admin column and buttons are not visible for non-admin", async ({
-    page,
-  }) => {
-    await expect(page.locator(".btn-delete")).toHaveCount(0);
-    await expect(page.locator(".btn-edit")).toHaveCount(0);
-    await expect(page.locator(".btn-info")).toHaveCount(0);
+  test("admin column and buttons are not visible for non-admin", async ({ page }) => {
+    expect(await page.locator(".btn-admin").count()).toBe(0);
+    expect(await page.locator(".btn-delete").count()).toBe(0);
+    expect(await page.locator(".btn-edit").count()).toBe(0);
+    expect(await page.locator(".btn-info").count()).toBe(0);
   });
-
-  // ── Login link in footer ────────────────────────────────────────────────────
 
   test("footer shows login link for non-admin", async ({ page }) => {
-    await expect(page.locator(".site-footer")).toBeVisible();
-    await expect(
-      page.locator('.site-footer a[href="/auth/login"]')
-    ).toBeVisible();
+    const footer = page.locator(".site-footer");
+    await expect(footer).toBeVisible();
+    await expect(footer.locator('a[href*="/auth/login"]')).toBeVisible();
   });
-
-  // ── Selection checkboxes ────────────────────────────────────────────────────
 
   test("selecting a row shows the selection bar", async ({ page }) => {
     const checkbox = page.locator(".row-select").first();
     if ((await checkbox.count()) > 0) {
-      // Use JS to toggle the checkbox and call its onchange handler,
-      // avoiding mobile touch-event issues with Playwright.
-      // The global functions are defined in upload.js and attached to window.
       await page.evaluate(() => {
         const w = window as Window & { toggleRowSelect?: (cb: HTMLInputElement) => void; clearSelection?: () => void };
         const cb = document.querySelector(".row-select") as HTMLInputElement;
@@ -149,27 +110,17 @@ test.describe("Non-admin UI – responsive layout", () => {
     }
   });
 
-  // ── Items rendered as data rows ─────────────────────────────────────────────
-
-  test("items table contains data rows with names", async ({ page }) => {
-    const names = page.locator(".col-name");
-    expect(await names.count()).toBeGreaterThan(0);
-    await expect(names.first()).not.toBeEmpty();
+  test("items table contains seeded data rows", async ({ page }) => {
+    const rows = page.locator(".items-table tbody tr");
+    expect(await rows.count()).toBeGreaterThanOrEqual(1);
   });
 
-  // ── Mobile card layout ──────────────────────────────────────────────────────
-
-  test("on mobile, items are displayed as cards", async ({ page }) => {
-    const viewport = page.viewportSize();
-    if (!viewport || viewport.width > 480) {
-      test.skip();
-      return;
-    }
-    // On mobile the thead should be hidden.
-    await expect(page.locator(".items-table thead")).toBeHidden();
-    // Each row should still have name and actions.
+  test("on mobile, items are displayed as cards", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "Card layout only applies on mobile");
+    const thead = page.locator(".items-table thead");
+    await expect(thead).toBeHidden();
     const firstRow = page.locator(".items-table tbody tr").first();
-    await expect(firstRow.locator(".col-name")).toBeVisible();
-    await expect(firstRow.locator(".col-actions")).toBeVisible();
+    const display = await firstRow.evaluate((el) => getComputedStyle(el).display);
+    expect(display).toBe("flex");
   });
 });

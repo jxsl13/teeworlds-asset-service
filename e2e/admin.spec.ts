@@ -1,4 +1,7 @@
 import { test, expect } from "@playwright/test";
+import path from "path";
+
+const ADMIN_STATE = path.join(__dirname, ".auth", "admin.json");
 
 /**
  * Click the first element matching `selector` via JavaScript `el.click()`.
@@ -23,25 +26,21 @@ async function jsClick(page: import("@playwright/test").Page, selector: string) 
 }
 
 test.describe("Admin UI – responsive layout", () => {
-  test.beforeEach(async ({ page, context }) => {
-    await context.addCookies([
-      { name: "e2e_admin", value: "1", url: "http://localhost:3333" },
-    ]);
-    await page.goto("/?admin=1");
-    await expect(page.locator(".items-table")).toBeVisible({ timeout: 10000 });
+  // Use the admin auth state saved by global-setup.ts.
+  test.use({ storageState: ADMIN_STATE });
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/skin");
+    await page.waitForSelector(".items-table", { state: "visible", timeout: 15_000 });
   });
 
-  test("loads the page with upload button and user badge", async ({
-    page,
-  }) => {
+  test("loads the page with upload button and user info", async ({ page }) => {
     await expect(page.locator("h1")).toContainText("Teeworlds Asset Database");
     await expect(page.locator(".btn-upload")).toBeVisible();
-    await expect(page.locator(".user-badge")).toContainText("TestAdmin");
+    await expect(page.locator('.btn-auth:has-text("Logout"), a:has-text("Logout")')).toBeVisible();
   });
 
-  test("admin buttons are visible in the items table rows", async ({
-    page,
-  }) => {
+  test("admin buttons are visible in the items table rows", async ({ page }) => {
     const adminBtns = page.locator(".btn-admin");
     expect(await adminBtns.count()).toBeGreaterThan(0);
     expect(await page.locator(".btn-info").count()).toBeGreaterThan(0);
@@ -51,9 +50,7 @@ test.describe("Admin UI – responsive layout", () => {
 
   test("clicking upload opens the upload modal", async ({ page }) => {
     await jsClick(page, ".btn-upload");
-    await expect(page.locator("#uploadModal")).toHaveClass(/open/, {
-      timeout: 5000,
-    });
+    await expect(page.locator("#uploadModal")).toHaveClass(/open/, { timeout: 5000 });
     await expect(page.locator("#uploadTypeLabel")).toBeVisible();
     await expect(page.locator("#uploadStep1 .btn-submit")).toBeVisible();
     await jsClick(page, "#uploadModal .modal-close");
@@ -62,18 +59,14 @@ test.describe("Admin UI – responsive layout", () => {
 
   test("clicking info button opens metadata modal", async ({ page }) => {
     await jsClick(page, ".btn-info");
-    await expect(page.locator("#metadataModal")).toHaveClass(/open/, {
-      timeout: 5000,
-    });
+    await expect(page.locator("#metadataModal")).toHaveClass(/open/, { timeout: 5000 });
     await jsClick(page, "#metadataModal .modal-close");
     await expect(page.locator("#metadataModal")).not.toHaveClass(/open/);
   });
 
   test("clicking edit button opens edit modal", async ({ page }) => {
     await jsClick(page, ".btn-edit");
-    await expect(page.locator("#editModal")).toHaveClass(/open/, {
-      timeout: 5000,
-    });
+    await expect(page.locator("#editModal")).toHaveClass(/open/, { timeout: 5000 });
     await expect(page.locator("#editName")).toBeVisible();
     await expect(page.locator("#editLicense")).toBeVisible();
     await jsClick(page, "#editModal .modal-close");
@@ -89,18 +82,20 @@ test.describe("Admin UI – responsive layout", () => {
   });
 
   test("switching tabs preserves admin controls", async ({ page }) => {
-    const mapTab = page.locator('.tab[data-type="map"]');
-    await mapTab.click();
-    await expect(page.locator(".items-table")).toBeVisible({ timeout: 5000 });
+    // Switch away from skin tab (which has seeded data).
+    const emotTab = page.locator('.tab[data-type="emoticon"]');
+    await emotTab.click();
+    await page.waitForTimeout(1000);
+    // Switch back to skin tab where admin buttons should reappear.
+    const skinTab = page.locator('.tab[data-type="skin"]');
+    await skinTab.click();
+    await page.waitForSelector(".items-table .btn-admin", { state: "visible", timeout: 10_000 });
     expect(await page.locator(".btn-admin").count()).toBeGreaterThan(0);
   });
 
   test("upload modal does not overflow the viewport", async ({ page }) => {
     await jsClick(page, ".btn-upload");
-    await expect(page.locator("#uploadModal")).toHaveClass(/open/, {
-      timeout: 5000,
-    });
-    // Compare computed CSS widths (unaffected by device pixel scaling).
+    await expect(page.locator("#uploadModal")).toHaveClass(/open/, { timeout: 5000 });
     const overflow = await page.evaluate(() => {
       const modal = document.querySelector("#uploadModal .modal")!;
       const cs = window.getComputedStyle(modal);
@@ -114,9 +109,7 @@ test.describe("Admin UI – responsive layout", () => {
 
   test("edit modal does not overflow the viewport", async ({ page }) => {
     await jsClick(page, ".btn-edit");
-    await expect(page.locator("#editModal")).toHaveClass(/open/, {
-      timeout: 5000,
-    });
+    await expect(page.locator("#editModal")).toHaveClass(/open/, { timeout: 5000 });
     const overflow = await page.evaluate(() => {
       const modal = document.querySelector("#editModal .modal")!;
       const cs = window.getComputedStyle(modal);
@@ -129,6 +122,6 @@ test.describe("Admin UI – responsive layout", () => {
   });
 
   test("logout link is visible for admin user", async ({ page }) => {
-    await expect(page.locator(".btn-auth")).toContainText("Logout");
+    await expect(page.locator('.btn-auth:has-text("Logout"), a:has-text("Logout")')).toBeVisible();
   });
 });

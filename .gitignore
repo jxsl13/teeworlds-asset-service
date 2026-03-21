@@ -6,7 +6,7 @@ __debug_bin*
 /asset-service
 /seed-ddnet-skins
 /provision-pocketid
-/e2e-server
+/e2e-seed
 
 # Node / Playwright
 node_modules/
@@ -14,4 +14,4 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
-
+e2e/.auth/

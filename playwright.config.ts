@@ -1,6 +1,14 @@
 // @ts-check
 import { defineConfig, devices } from "@playwright/test";
+import path from "path";
 
+/**
+ * Playwright config for E2E tests against a live asset-service instance
+ * backed by real PostgreSQL + Pocket-ID Docker containers.
+ *
+ *   webServer   – runs e2e/start-server.sh (docker + provision + app server)
+ *   globalSetup – seeds data, performs admin OIDC login, saves auth state
+ */
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -9,10 +17,13 @@ export default defineConfig({
   workers: 1,
   reporter: "html",
 
+  globalSetup: path.resolve(__dirname, "e2e/global-setup.ts"),
+
   use: {
-    baseURL: "http://localhost:3333",
+    baseURL: "http://localhost:8080",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    ignoreHTTPSErrors: true, // Pocket-ID uses self-signed certs
   },
 
   projects: [
@@ -36,10 +47,9 @@ export default defineConfig({
   ],
 
   webServer: {
-    command:
-      "REPO_ROOT=. E2E_ADDR=:3333 go run ./cmd/e2e-server",
-    url: "http://localhost:3333",
+    command: "bash e2e/start-server.sh",
+    url: "http://localhost:8080",
     reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
+    timeout: 120_000,
   },
 });
