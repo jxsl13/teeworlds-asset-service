@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -38,10 +40,10 @@ func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, insecureClient)
 	}
 
-	// Discover OIDC endpoints from Pocket ID
-	oidcProvider, err := oidc.NewProvider(ctx, cfg.IssuerURL)
+	// Discover OIDC endpoints from Pocket ID, polling until reachable.
+	oidcProvider, err := discoverProvider(ctx, cfg.IssuerURL)
 	if err != nil {
-		return nil, fmt.Errorf("oidcauth: failed to discover provider at %s: %w", cfg.IssuerURL, err)
+		return nil, err
 	}
 
 	oauth2Config := &oauth2.Config{
@@ -105,4 +107,37 @@ func (p *Provider) oidcCtx(ctx context.Context) context.Context {
 		return context.WithValue(ctx, oauth2.HTTPClient, p.insecureHTTP)
 	}
 	return ctx
+}
+
+// discoverProvider attempts OIDC provider discovery, polling until the
+// identity provider becomes reachable. If the first attempt fails, a single
+// warning is logged; once the provider responds successfully a single info
+// line is logged — at most two log lines for the transition.
+func discoverProvider(ctx context.Context, issuerURL string) (*oidc.Provider, error) {
+	provider, err := oidc.NewProvider(ctx, issuerURL)
+	if err == nil {
+		return provider, nil
+	}
+
+	slog.Warn("OIDC provider not yet available, polling until reachable",
+		"issuer", issuerURL,
+		"err", err,
+	)
+
+	const pollInterval = 2 * time.Second
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("oidcauth: context cancelled while waiting for provider at %s: %w", issuerURL, ctx.Err())
+		case <-ticker.C:
+			provider, err = oidc.NewProvider(ctx, issuerURL)
+			if err == nil {
+				slog.Info("OIDC provider is now available", "issuer", issuerURL)
+				return provider, nil
+			}
+		}
+	}
 }
