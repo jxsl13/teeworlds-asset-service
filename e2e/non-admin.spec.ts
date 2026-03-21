@@ -25,10 +25,10 @@ test.describe("Non-admin UI – responsive layout", () => {
   test("switching tabs loads content for the selected asset type", async ({ page }) => {
     const mapTab = page.locator('.tab[data-type="map"]');
     await mapTab.click();
-    await page.waitForTimeout(1000);
+    // Wait for HTMX swap to complete by checking the tab becomes active.
+    await expect(mapTab).toHaveClass(/active/, { timeout: 5000 });
     await expect(page.locator("#content")).toBeVisible();
     await expect(page.locator('.tab[data-type="skin"]')).not.toHaveClass(/active/);
-    await expect(mapTab).toHaveClass(/active/);
   });
 
   test("clicking a column header triggers sort (desktop only)", async ({
@@ -62,7 +62,8 @@ test.describe("Non-admin UI – responsive layout", () => {
     const searchInput = page.locator("#search");
     await expect(searchInput).toBeVisible();
     await searchInput.fill("E2E");
-    await page.waitForTimeout(500);
+    // Wait for HTMX search response (triggers on input changed delay:100ms).
+    await page.waitForResponse((r) => r.url().includes("/skin") && r.status() === 200, { timeout: 5000 }).catch(() => {});
     await expect(page.locator("#content")).toBeVisible();
   });
 

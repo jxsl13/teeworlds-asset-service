@@ -20,6 +20,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 )
 
@@ -101,7 +102,12 @@ func upload(baseURL string, s testSkin, pngData []byte) error {
 	}
 	w.Close()
 
-	resp, err := http.Post(baseURL+"/api/upload/skin", w.FormDataContentType(), &body) //nolint:gosec
+	uploadURL, err := url.JoinPath(baseURL, "/api/upload/skin")
+	if err != nil {
+		return fmt.Errorf("build upload URL: %w", err)
+	}
+
+	resp, err := http.Post(uploadURL, w.FormDataContentType(), &body) //nolint:gosec
 	if err != nil {
 		return err
 	}

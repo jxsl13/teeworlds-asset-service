@@ -85,7 +85,7 @@ test.describe("Admin UI – responsive layout", () => {
     // Switch away from skin tab (which has seeded data).
     const emotTab = page.locator('.tab[data-type="emoticon"]');
     await emotTab.click();
-    await page.waitForTimeout(1000);
+    await expect(emotTab).toHaveClass(/active/, { timeout: 5000 });
     // Switch back to skin tab where admin buttons should reappear.
     const skinTab = page.locator('.tab[data-type="skin"]');
     await skinTab.click();
