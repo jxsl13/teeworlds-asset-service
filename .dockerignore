@@ -1,0 +1,6 @@
+.git
+volumes/
+testdata/
+docker/
+*.md
+.github/
