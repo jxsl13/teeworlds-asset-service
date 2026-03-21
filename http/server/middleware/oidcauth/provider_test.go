@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
 
@@ -56,7 +57,7 @@ func TestDiscoverProvider_WaitsUntilReachable(t *testing.T) {
 	}()
 
 	done := make(chan struct{})
-	var provider interface{}
+	var provider *oidc.Provider
 	var discoverErr error
 
 	go func() {
