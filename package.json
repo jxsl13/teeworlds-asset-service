@@ -1,0 +1,26 @@
+{
+  "name": "teeworlds-asset-service",
+  "version": "1.0.0",
+  "description": "Community database for Teeworlds assets — skins, maps, gameskins & more. Go service with layered architecture and OpenAPI-first code generation.",
+  "main": "index.js",
+  "scripts": {
+    "test:e2e": "npx playwright test",
+    "test:e2e:mobile": "npx playwright test --project=mobile-portrait",
+    "test:e2e:desktop": "npx playwright test --project=desktop"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jxsl13/teeworlds-asset-service.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jxsl13/teeworlds-asset-service/issues"
+  },
+  "homepage": "https://github.com/jxsl13/teeworlds-asset-service#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

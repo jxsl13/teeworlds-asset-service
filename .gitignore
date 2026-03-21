@@ -7,3 +7,10 @@ __debug_bin*
 /seed-ddnet-skins
 /provision-pocketid
 
+# Node / Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
