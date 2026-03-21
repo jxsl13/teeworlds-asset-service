@@ -44,14 +44,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	redirectURL, err := must("OIDC_REDIRECT_URL")
+	externalURL, err := must("EXTERNAL_URL")
 	if err != nil {
 		return err
 	}
-	postLogoutURL, err := must("OIDC_POST_LOGOUT_REDIRECT_URL")
-	if err != nil {
-		return err
-	}
+	externalURL = strings.TrimRight(externalURL, "/")
+
+	redirectURL := externalURL + "/auth/callback"
+	postLogoutURL := externalURL + "/auth/post-logout"
 
 	adminEmail := get("POCKET_ID_ADMIN_EMAIL")
 	if adminEmail == "" {
