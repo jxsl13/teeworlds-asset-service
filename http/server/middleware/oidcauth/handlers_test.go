@@ -43,6 +43,8 @@ func TestLoginHandler_ReturnTo(t *testing.T) {
 		{"protocol-relative rejected", "//evil.com", false, ""},
 		{"protocol-relative with path rejected", "//evil.com/foo", false, ""},
 		{"bare domain rejected", "evil.com", false, ""},
+		{"backslash bypass rejected", "/\\evil.com", false, ""},
+		{"path with fragment", "/skin#section", true, "/skin#section"},
 	}
 
 	for _, tt := range tests {
@@ -87,6 +89,34 @@ func TestLoginHandler_ReturnTo(t *testing.T) {
 	}
 }
 
+func TestIsSafeReturnURL(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"/skin", true},
+		{"/skin?limit=20&sort=name:asc", true},
+		{"/", true},
+		{"/skin#section", true},
+		{"", false},
+		{"https://evil.com", false},
+		{"http://evil.com/path", false},
+		{"//evil.com", false},
+		{"//evil.com/path", false},
+		{"/\\evil.com", false},
+		{"evil.com", false},
+		{"javascript:alert(1)", false},
+		{"data:text/html,<h1>hi</h1>", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := isSafeReturnURL(tt.input); got != tt.want {
+				t.Errorf("isSafeReturnURL(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLogoutHandler_ReturnTo(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -100,6 +130,7 @@ func TestLogoutHandler_ReturnTo(t *testing.T) {
 		{"protocol-relative rejected", "//evil.com", "/"},
 		{"protocol-relative with path rejected", "//evil.com/foo", "/"},
 		{"bare domain rejected", "evil.com", "/"},
+		{"backslash bypass rejected", "/\\evil.com", "/"},
 	}
 
 	for _, tt := range tests {

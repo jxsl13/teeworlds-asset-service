@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -23,10 +24,8 @@ func (p *Provider) LoginHandler() http.HandlerFunc {
 
 		// Allow callers to specify where to redirect after login.
 		// Only accept relative paths to prevent open redirect.
-		if returnTo := r.URL.Query().Get("return_to"); returnTo != "" {
-			if strings.HasPrefix(returnTo, "/") && !strings.HasPrefix(returnTo, "//") {
-				sess.ReturnTo = returnTo
-			}
+		if returnTo := r.URL.Query().Get("return_to"); isSafeReturnURL(returnTo) {
+			sess.ReturnTo = returnTo
 		}
 
 		p.store.set(sessionID, sess)
@@ -123,7 +122,7 @@ func (p *Provider) CallbackHandler() http.HandlerFunc {
 
 		// Redirect to the original page or home.
 		// Validate to prevent open redirects (defence-in-depth).
-		if returnTo == "" || !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
+		if !isSafeReturnURL(returnTo) {
 			returnTo = "/"
 		}
 		http.Redirect(w, r, returnTo, http.StatusFound)
@@ -144,11 +143,8 @@ func (p *Provider) LogoutHandler() http.HandlerFunc {
 
 		// Redirect back to the page the user came from (default: /).
 		target := "/"
-		if returnTo := r.URL.Query().Get("return_to"); returnTo != "" {
-			// Only accept relative paths to prevent open redirect.
-			if strings.HasPrefix(returnTo, "/") && !strings.HasPrefix(returnTo, "//") {
-				target = returnTo
-			}
+		if returnTo := r.URL.Query().Get("return_to"); isSafeReturnURL(returnTo) {
+			target = returnTo
 		}
 		http.Redirect(w, r, target, http.StatusFound)
 	}
@@ -159,4 +155,22 @@ func (p *Provider) RegisterHandlers(mux *http.ServeMux) {
 	mux.Handle(p.config.LoginPath, p.LoginHandler())
 	mux.Handle(p.config.CallbackPath, p.CallbackHandler())
 	mux.Handle(p.config.LogoutPath, p.LogoutHandler())
+}
+
+// isSafeReturnURL returns true when s is a relative path that can safely be
+// used as a post-login/logout redirect target without risking an open redirect.
+// It rejects absolute URLs, protocol-relative URLs, and backslash-containing
+// paths (some browsers normalise \ to /, which could turn /\host into //host).
+func isSafeReturnURL(s string) bool {
+	if s == "" {
+		return false
+	}
+	if strings.ContainsRune(s, '\\') {
+		return false
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	return u.Scheme == "" && u.Host == "" && strings.HasPrefix(u.Path, "/")
 }
