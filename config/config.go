@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -69,13 +70,22 @@ type Config struct {
 	//   others → smallest allowed resolution
 	ThumbnailSizes map[string]Resolution
 
+	// ExternalURL is the publicly reachable base URL of this service
+	// (e.g. "https://assets.example.com" or "http://localhost:8080").
+	// All OIDC callback URLs are derived from this base URL.
+	// Env: EXTERNAL_URL (required)
+	ExternalURL string
+
 	// OIDC / Pocket-ID configuration (required).
 	// Provision credentials via cmd/provision-pocketid before first start.
-	OIDCIssuerURL             string // Env: OIDC_ISSUER_URL
-	OIDCClientID              string // Env: OIDC_CLIENT_ID
-	OIDCClientSecret          string // Env: OIDC_CLIENT_SECRET
-	OIDCRedirectURL           string // Env: OIDC_REDIRECT_URL
-	OIDCPostLogoutRedirectURL string // Env: OIDC_POST_LOGOUT_REDIRECT_URL
+	OIDCIssuerURL    string // Env: OIDC_ISSUER_URL
+	OIDCClientID     string // Env: OIDC_CLIENT_ID
+	OIDCClientSecret string // Env: OIDC_CLIENT_SECRET
+
+	// OIDCRedirectURL is derived from ExternalURL + "/auth/callback".
+	OIDCRedirectURL string
+	// OIDCPostLogoutRedirectURL is derived from ExternalURL + "/auth/post-logout".
+	OIDCPostLogoutRedirectURL string
 
 	// Insecure disables secure cookies (HTTPS requirement) for OIDC sessions.
 	// Env: INSECURE (default: false — set to "true" for local HTTP dev)
@@ -153,14 +163,13 @@ func Load() (Config, error) {
 		Addr:           os.Getenv("ADDR"),
 		StoragePath:    os.Getenv("STORAGE_PATH"),
 		TempUploadPath: os.Getenv("TEMP_UPLOAD_PATH"),
+		ExternalURL:    strings.TrimRight(os.Getenv("EXTERNAL_URL"), "/"),
 
-		OIDCIssuerURL:             os.Getenv("OIDC_ISSUER_URL"),
-		OIDCClientID:              os.Getenv("OIDC_CLIENT_ID"),
-		OIDCClientSecret:          os.Getenv("OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:           os.Getenv("OIDC_REDIRECT_URL"),
-		OIDCPostLogoutRedirectURL: os.Getenv("OIDC_POST_LOGOUT_REDIRECT_URL"),
-		Insecure:                  os.Getenv("INSECURE") == "true",
-		AdminOnlyUpload:           os.Getenv("ADMIN_ONLY_UPLOAD") == "true",
+		OIDCIssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
+		OIDCClientID:     os.Getenv("OIDC_CLIENT_ID"),
+		OIDCClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+		Insecure:         os.Getenv("INSECURE") == "true",
+		AdminOnlyUpload:  os.Getenv("ADMIN_ONLY_UPLOAD") == "true",
 	}
 
 	var missing []string
@@ -170,10 +179,10 @@ func Load() (Config, error) {
 		{"DB_PASSWORD", cfg.DBPassword},
 		{"DB_NAME", cfg.DBName},
 		{"STORAGE_PATH", cfg.StoragePath},
+		{"EXTERNAL_URL", cfg.ExternalURL},
 		{"OIDC_ISSUER_URL", cfg.OIDCIssuerURL},
 		{"OIDC_CLIENT_ID", cfg.OIDCClientID},
 		{"OIDC_CLIENT_SECRET", cfg.OIDCClientSecret},
-		{"OIDC_REDIRECT_URL", cfg.OIDCRedirectURL},
 	} {
 		if kv.val == "" {
 			missing = append(missing, kv.key)
@@ -182,6 +191,22 @@ func Load() (Config, error) {
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("required environment variables not set: %s", strings.Join(missing, ", "))
 	}
+
+	// Validate that EXTERNAL_URL is a proper absolute URL.
+	parsedExternal, err := url.ParseRequestURI(cfg.ExternalURL)
+	if err != nil {
+		return Config{}, fmt.Errorf("EXTERNAL_URL: must be a valid absolute URL (e.g. https://assets.example.com): %w", err)
+	}
+	if parsedExternal.Scheme == "" {
+		return Config{}, fmt.Errorf("EXTERNAL_URL: missing URL scheme (expected http or https), got %q", cfg.ExternalURL)
+	}
+	if parsedExternal.Host == "" {
+		return Config{}, fmt.Errorf("EXTERNAL_URL: missing host, got %q", cfg.ExternalURL)
+	}
+
+	// Derive OIDC callback URLs from the single external base URL.
+	cfg.OIDCRedirectURL = cfg.ExternalURL + "/auth/callback"
+	cfg.OIDCPostLogoutRedirectURL = cfg.ExternalURL + "/auth/post-logout"
 
 	if cfg.DBPort == "" {
 		cfg.DBPort = "5432"
