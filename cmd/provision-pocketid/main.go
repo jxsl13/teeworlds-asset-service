@@ -70,7 +70,7 @@ func run() error {
 	if clientName == "" {
 		clientName = "Teeworlds Asset Database"
 	}
-	insecure := get("INSECURE") == "true"
+	insecure := strings.EqualFold(get("INSECURE"), "true")
 
 	result, err := pocketid.Provision(ctx, pocketid.Config{
 		BaseURL:            issuerURL,
@@ -86,20 +86,10 @@ func run() error {
 		return fmt.Errorf("provision: %w", err)
 	}
 
-	if *envFile != "" {
-		if err := updateEnvFile(*envFile, result.ClientID, result.Secret); err != nil {
-			return fmt.Errorf("update env file: %w", err)
-		}
-		fmt.Printf("Updated %s with OIDC_CLIENT_ID and OIDC_CLIENT_SECRET\n", *envFile)
-	} else {
-		fmt.Println()
-		fmt.Println("=== Pocket-ID Provisioning Complete ===")
-		fmt.Println()
-		fmt.Printf("Add the following to %s:\n", *envFile)
-		fmt.Println()
-		fmt.Printf("  OIDC_CLIENT_ID=%s\n", result.ClientID)
-		fmt.Printf("  OIDC_CLIENT_SECRET=%s\n", result.Secret)
+	if err := updateEnvFile(*envFile, result.ClientID, result.Secret); err != nil {
+		return fmt.Errorf("update env file: %w", err)
 	}
+	fmt.Printf("Updated %s with OIDC_CLIENT_ID and OIDC_CLIENT_SECRET\n", *envFile)
 
 	if result.LoginURL != "" {
 		fmt.Println()

@@ -197,8 +197,8 @@ func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackU
 
 	body := map[string]any{
 		"name":               name,
-		"callbackURLs":       callbackURLs,
-		"logoutCallbackURLs": logoutURLs,
+		"callbackURLs":       toURLObjects(callbackURLs),
+		"logoutCallbackURLs": toURLObjects(logoutURLs),
 		"isPublic":           false,
 		"pkceEnabled":        true,
 	}
@@ -378,4 +378,14 @@ func (c *apiClient) post(ctx context.Context, path string, body any, result any)
 
 func (c *apiClient) put(ctx context.Context, path string, body any) error {
 	return c.do(ctx, http.MethodPut, path, body, nil)
+}
+
+// toURLObjects converts a slice of URL strings to the object format expected
+// by newer Pocket-ID API versions: [{"url": "..."}] instead of ["..."].
+func toURLObjects(urls []string) []map[string]string {
+	out := make([]map[string]string, len(urls))
+	for i, u := range urls {
+		out[i] = map[string]string{"url": u}
+	}
+	return out
 }
