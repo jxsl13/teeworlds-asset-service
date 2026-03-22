@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -78,6 +79,7 @@ func run() error {
 		ClientName:         clientName,
 		CallbackURLs:       []string{redirectURL},
 		LogoutCallbackURLs: []string{postLogoutURL},
+		LaunchURL:          externalURL,
 		AdminEmail:         adminEmail,
 		AdminGroupName:     "admin",
 		Insecure:           insecure,
@@ -122,9 +124,17 @@ func readEnvFile(path string) (map[string]string, error) {
 		if !ok {
 			continue
 		}
-		env[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		env[strings.TrimSpace(key)] = stripQuotes(strings.TrimSpace(value))
 	}
 	return env, scanner.Err()
+}
+
+// stripQuotes removes surrounding quotes from a .env value using strconv.Unquote.
+func stripQuotes(s string) string {
+	if unquoted, err := strconv.Unquote(s); err == nil {
+		return unquoted
+	}
+	return s
 }
 
 // updateEnvFile replaces OIDC_CLIENT_ID and OIDC_CLIENT_SECRET values in the

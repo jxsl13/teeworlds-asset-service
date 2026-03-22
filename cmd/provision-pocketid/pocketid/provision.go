@@ -37,6 +37,10 @@ type Config struct {
 	// LogoutCallbackURLs are the allowed post-logout redirect URIs.
 	LogoutCallbackURLs []string
 
+	// LaunchURL is the URL shown as the "Open" / start link for the OIDC client
+	// in the Pocket-ID dashboard (maps to the launchURL field).
+	LaunchURL string
+
 	// AdminEmail is the email for the initial admin user.
 	AdminEmail string
 
@@ -80,7 +84,7 @@ func Provision(ctx context.Context, cfg Config) (*Result, error) {
 	}
 
 	// ── Create OIDC client + secret ─────────────────────────────────────────
-	clientID, err := c.ensureOIDCClient(ctx, cfg.ClientName, cfg.CallbackURLs, cfg.LogoutCallbackURLs)
+	clientID, err := c.ensureOIDCClient(ctx, cfg.ClientName, cfg.CallbackURLs, cfg.LogoutCallbackURLs, cfg.LaunchURL)
 	if err != nil {
 		return nil, fmt.Errorf("ensure oidc client: %w", err)
 	}
@@ -183,7 +187,7 @@ func (c *apiClient) clientExists(ctx context.Context, clientID string) bool {
 	return err == nil && result.ID == clientID
 }
 
-func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackURLs, logoutURLs []string) (string, error) {
+func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackURLs, logoutURLs []string, launchURL string) (string, error) {
 	var list paginatedClients
 	if err := c.get(ctx, "/api/oidc/clients", &list); err != nil {
 		return "", err
@@ -191,7 +195,7 @@ func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackU
 
 	for _, cl := range list.Data {
 		if cl.Name == name {
-			if err := c.updateOIDCClient(ctx, cl.ID, name, callbackURLs, logoutURLs); err != nil {
+			if err := c.updateOIDCClient(ctx, cl.ID, name, callbackURLs, logoutURLs, launchURL); err != nil {
 				return "", err
 			}
 			return cl.ID, nil
@@ -204,6 +208,7 @@ func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackU
 		"logoutCallbackURLs": logoutURLs,
 		"isPublic":           false,
 		"pkceEnabled":        true,
+		"launchURL":          launchURL,
 	}
 
 	var created oidcClient
@@ -213,13 +218,14 @@ func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackU
 	return created.ID, nil
 }
 
-func (c *apiClient) updateOIDCClient(ctx context.Context, clientID, name string, callbackURLs, logoutURLs []string) error {
+func (c *apiClient) updateOIDCClient(ctx context.Context, clientID, name string, callbackURLs, logoutURLs []string, launchURL string) error {
 	body := map[string]any{
 		"name":               name,
 		"callbackURLs":       callbackURLs,
 		"logoutCallbackURLs": logoutURLs,
 		"isPublic":           false,
 		"pkceEnabled":        true,
+		"launchURL":          launchURL,
 	}
 
 	var updated oidcClient
@@ -287,10 +293,9 @@ func (c *apiClient) assignGroupToClient(ctx context.Context, clientID, groupID s
 
 // ── Users ───────────────────────────────────────────────────────────────────
 
-const staticAPIUserID = "00000000-0000-0000-0000-000000000000"
-
 type user struct {
-	ID string `json:"id"`
+	ID    string  `json:"id"`
+	Email *string `json:"email"`
 }
 
 type paginatedUsers struct {
@@ -304,7 +309,7 @@ func (c *apiClient) ensureAdminUser(ctx context.Context, email string) (string, 
 	}
 
 	for _, u := range list.Data {
-		if u.ID != staticAPIUserID {
+		if u.Email != nil && *u.Email == email {
 			return u.ID, nil
 		}
 	}
