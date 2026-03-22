@@ -6,7 +6,7 @@ WHERE  ai.item_id    = $1
 AND    ag.asset_type  = $2;
 
 -- name: GetItemThumbnailPath :one
-SELECT ai.item_thumbnail_path
+SELECT ai.item_thumbnail_path, ai.thumbnail_checksum
 FROM   asset_item ai
 JOIN   asset_group ag ON ai.group_id = ag.group_id
 WHERE  ai.item_id    = $1
@@ -14,7 +14,7 @@ AND    ag.asset_type  = $2
 AND    ai.item_thumbnail_path IS NOT NULL;
 
 -- name: GetGroupThumbnailPath :one
-SELECT ai.item_thumbnail_path
+SELECT ai.item_thumbnail_path, ai.thumbnail_checksum
 FROM   asset_item ai
 WHERE  ai.group_id = $1
 AND    ai.item_thumbnail_path IS NOT NULL

@@ -310,6 +310,12 @@ type DownloadThumbnailParams struct {
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
+// HeadThumbnailParams defines parameters for HeadThumbnail.
+type HeadThumbnailParams struct {
+	// IfNoneMatch ETag value from a previous response. If the thumbnail has not changed, the server responds with 304 Not Modified.
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
 // RenderItemListParams defines parameters for RenderItemList.
 type RenderItemListParams struct {
 	// Q Optional fuzzy search query.

@@ -38,13 +38,14 @@ WHERE  ai.group_id = $1;
 
 -- name: UpdateItem :exec
 UPDATE asset_item
-SET    size              = $1,
-       checksum          = $2,
-       item_file_path    = $3,
+SET    size                = $1,
+       checksum            = $2,
+       item_file_path      = $3,
        item_thumbnail_path = sqlc.narg(item_thumbnail_path),
-       original_filename = $4
-WHERE  item_id  = $5
-AND    group_id = $6;
+       thumbnail_checksum  = $4,
+       original_filename   = $5
+WHERE  item_id  = $6
+AND    group_id = $7;
 
 -- name: CountGroupItems :one
 SELECT COUNT(*) FROM asset_item WHERE group_id = $1;

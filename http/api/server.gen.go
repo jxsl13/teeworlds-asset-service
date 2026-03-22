@@ -52,6 +52,9 @@ type ServerInterface interface {
 	// Download the thumbnail for an item
 	// (GET /api/{asset_type}/{item_id}/thumbnail)
 	DownloadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params DownloadThumbnailParams)
+	// Check thumbnail metadata without downloading
+	// (HEAD /api/{asset_type}/{item_id}/thumbnail)
+	HeadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params HeadThumbnailParams)
 	// Render an HTML fragment listing items
 	// (GET /{asset_type})
 	RenderItemList(w http.ResponseWriter, r *http.Request, assetType ItemType, params RenderItemListParams)
@@ -124,6 +127,12 @@ func (_ Unimplemented) DownloadItem(w http.ResponseWriter, r *http.Request, asse
 // Download the thumbnail for an item
 // (GET /api/{asset_type}/{item_id}/thumbnail)
 func (_ Unimplemented) DownloadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params DownloadThumbnailParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Check thumbnail metadata without downloading
+// (HEAD /api/{asset_type}/{item_id}/thumbnail)
+func (_ Unimplemented) HeadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params HeadThumbnailParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -553,6 +562,64 @@ func (siw *ServerInterfaceWrapper) DownloadThumbnail(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// HeadThumbnail operation middleware
+func (siw *ServerInterfaceWrapper) HeadThumbnail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "asset_type" -------------
+	var assetType ItemType
+
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_type", chi.URLParam(r, "asset_type"), &assetType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_type", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params HeadThumbnailParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.HeadThumbnail(w, r, assetType, itemId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RenderItemList operation middleware
 func (siw *ServerInterfaceWrapper) RenderItemList(w http.ResponseWriter, r *http.Request) {
 
@@ -782,6 +849,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/{asset_type}/{item_id}/thumbnail", wrapper.DownloadThumbnail)
+	})
+	r.Group(func(r chi.Router) {
+		r.Head(options.BaseURL+"/api/{asset_type}/{item_id}/thumbnail", wrapper.HeadThumbnail)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/{asset_type}", wrapper.RenderItemList)
@@ -1274,6 +1344,62 @@ func (response DownloadThumbnail500JSONResponse) VisitDownloadThumbnailResponse(
 	return json.NewEncoder(w).Encode(response)
 }
 
+type HeadThumbnailRequestObject struct {
+	AssetType ItemType           `json:"asset_type"`
+	ItemId    openapi_types.UUID `json:"item_id"`
+	Params    HeadThumbnailParams
+}
+
+type HeadThumbnailResponseObject interface {
+	VisitHeadThumbnailResponse(w http.ResponseWriter) error
+}
+
+type HeadThumbnail200ResponseHeaders struct {
+	CacheControl  string
+	ContentLength int
+	ContentType   string
+	ETag          string
+}
+
+type HeadThumbnail200Response struct {
+	Headers HeadThumbnail200ResponseHeaders
+}
+
+func (response HeadThumbnail200Response) VisitHeadThumbnailResponse(w http.ResponseWriter) error {
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("Content-Length", fmt.Sprint(response.Headers.ContentLength))
+	w.Header().Set("Content-Type", fmt.Sprint(response.Headers.ContentType))
+	w.Header().Set("ETag", fmt.Sprint(response.Headers.ETag))
+	w.WriteHeader(200)
+	return nil
+}
+
+type HeadThumbnail304Response struct {
+}
+
+func (response HeadThumbnail304Response) VisitHeadThumbnailResponse(w http.ResponseWriter) error {
+	w.WriteHeader(304)
+	return nil
+}
+
+type HeadThumbnail404JSONResponse ErrorResponse
+
+func (response HeadThumbnail404JSONResponse) VisitHeadThumbnailResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type HeadThumbnail500JSONResponse ErrorResponse
+
+func (response HeadThumbnail500JSONResponse) VisitHeadThumbnailResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type RenderItemListRequestObject struct {
 	AssetType ItemType `json:"asset_type"`
 	Params    RenderItemListParams
@@ -1355,6 +1481,9 @@ type StrictServerInterface interface {
 	// Download the thumbnail for an item
 	// (GET /api/{asset_type}/{item_id}/thumbnail)
 	DownloadThumbnail(ctx context.Context, request DownloadThumbnailRequestObject) (DownloadThumbnailResponseObject, error)
+	// Check thumbnail metadata without downloading
+	// (HEAD /api/{asset_type}/{item_id}/thumbnail)
+	HeadThumbnail(ctx context.Context, request HeadThumbnailRequestObject) (HeadThumbnailResponseObject, error)
 	// Render an HTML fragment listing items
 	// (GET /{asset_type})
 	RenderItemList(ctx context.Context, request RenderItemListRequestObject) (RenderItemListResponseObject, error)
@@ -1682,6 +1811,34 @@ func (sh *strictHandler) DownloadThumbnail(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DownloadThumbnailResponseObject); ok {
 		if err := validResponse.VisitDownloadThumbnailResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// HeadThumbnail operation middleware
+func (sh *strictHandler) HeadThumbnail(w http.ResponseWriter, r *http.Request, assetType ItemType, itemId openapi_types.UUID, params HeadThumbnailParams) {
+	var request HeadThumbnailRequestObject
+
+	request.AssetType = assetType
+	request.ItemId = itemId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.HeadThumbnail(ctx, request.(HeadThumbnailRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "HeadThumbnail")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(HeadThumbnailResponseObject); ok {
+		if err := validResponse.VisitHeadThumbnailResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

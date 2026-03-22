@@ -432,12 +432,78 @@ paths:
             ETag:
               schema:
                 type: string
-                example: "\"019cf922-a443-79db-a67e-342b6edea3cf\""
+                example: "\"a3f5b2c1d4e6789012345678abcdef01\""
           content:
             image/png:
               schema:
                 type: string
                 format: binary
+        "304":
+          description: >
+            Not Modified – the client's cached version is still current.
+        "404":
+          description: Item or thumbnail not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    head:
+      operationId: headThumbnail
+      summary: Check thumbnail metadata without downloading
+      tags:
+        - storage
+      description: >
+        Returns the same headers as GET (Content-Type, Content-Length,
+        Cache-Control, ETag) but without the response body. Useful for
+        cache validation and existence checks.
+      parameters:
+        - name: asset_type
+          in: path
+          required: true
+          description: The type of item (lowercase).
+          schema:
+            $ref: "#/components/schemas/ItemType"
+        - name: item_id
+          in: path
+          required: true
+          description: Unique identifier of the item.
+          schema:
+            type: string
+            format: uuid
+        - name: If-None-Match
+          in: header
+          required: false
+          description: >
+            ETag value from a previous response. If the thumbnail has not
+            changed, the server responds with 304 Not Modified.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Thumbnail metadata headers (no body).
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "public, max-age=31536000, immutable"
+            ETag:
+              schema:
+                type: string
+                example: "\"a3f5b2c1d4e6789012345678abcdef01\""
+            Content-Type:
+              schema:
+                type: string
+                example: "image/png"
+            Content-Length:
+              schema:
+                type: integer
+                example: 32768
         "304":
           description: >
             Not Modified – the client's cached version is still current.

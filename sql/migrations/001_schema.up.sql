@@ -50,6 +50,7 @@ CREATE TABLE asset_item (
                 AND item_thumbnail_path LIKE '/%'
             )
         ),
+    thumbnail_checksum  VARCHAR(128) NOT NULL,
     original_filename   TEXT NOT NULL DEFAULT '',
     -- we assume that there is not supposed to be a checksum collision across asset types,
     -- otherwise we'd have to also keep track of the asset_type in this table

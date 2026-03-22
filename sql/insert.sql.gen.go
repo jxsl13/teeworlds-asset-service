@@ -35,9 +35,9 @@ func (q *Queries) GetGroupID(ctx context.Context, arg GetGroupIDParams) (uuid.UU
 }
 
 const insertItem = `-- name: InsertItem :execrows
-INSERT INTO asset_item (item_id, group_id, group_value, size, checksum, item_file_path, item_thumbnail_path, original_filename)
-SELECT $1, $2, $3, $4, $5, $6, $8, $7
-WHERE (SELECT total_size FROM storage_stats) + $4 <= $9
+INSERT INTO asset_item (item_id, group_id, group_value, size, checksum, item_file_path, item_thumbnail_path, thumbnail_checksum, original_filename)
+SELECT $1, $2, $3, $4, $5, $6, $9, $7, $8
+WHERE (SELECT total_size FROM storage_stats) + $4 <= $10
 `
 
 type InsertItemParams struct {
@@ -47,6 +47,7 @@ type InsertItemParams struct {
 	Size              int64          `db:"size"`
 	Checksum          string         `db:"checksum"`
 	ItemFilePath      string         `db:"item_file_path"`
+	ThumbnailChecksum string         `db:"thumbnail_checksum"`
 	OriginalFilename  string         `db:"original_filename"`
 	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
 	MaxTotalSize      int64          `db:"max_total_size"`
@@ -60,6 +61,7 @@ func (q *Queries) InsertItem(ctx context.Context, arg InsertItemParams) (int64, 
 		arg.Size,
 		arg.Checksum,
 		arg.ItemFilePath,
+		arg.ThumbnailChecksum,
 		arg.OriginalFilename,
 		arg.ItemThumbnailPath,
 		arg.MaxTotalSize,

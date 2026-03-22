@@ -90,7 +90,7 @@ func (q *Queries) GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([
 }
 
 const getGroupThumbnailPath = `-- name: GetGroupThumbnailPath :one
-SELECT ai.item_thumbnail_path
+SELECT ai.item_thumbnail_path, ai.thumbnail_checksum
 FROM   asset_item ai
 WHERE  ai.group_id = $1
 AND    ai.item_thumbnail_path IS NOT NULL
@@ -98,11 +98,16 @@ ORDER BY ai.size ASC
 LIMIT 1
 `
 
-func (q *Queries) GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (sql.NullString, error) {
+type GetGroupThumbnailPathRow struct {
+	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
+	ThumbnailChecksum string         `db:"thumbnail_checksum"`
+}
+
+func (q *Queries) GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (GetGroupThumbnailPathRow, error) {
 	row := q.queryRow(ctx, q.getGroupThumbnailPathStmt, getGroupThumbnailPath, groupID)
-	var item_thumbnail_path sql.NullString
-	err := row.Scan(&item_thumbnail_path)
-	return item_thumbnail_path, err
+	var i GetGroupThumbnailPathRow
+	err := row.Scan(&i.ItemThumbnailPath, &i.ThumbnailChecksum)
+	return i, err
 }
 
 const getItemByChecksum = `-- name: GetItemByChecksum :one
@@ -159,7 +164,7 @@ func (q *Queries) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams
 }
 
 const getItemThumbnailPath = `-- name: GetItemThumbnailPath :one
-SELECT ai.item_thumbnail_path
+SELECT ai.item_thumbnail_path, ai.thumbnail_checksum
 FROM   asset_item ai
 JOIN   asset_group ag ON ai.group_id = ag.group_id
 WHERE  ai.item_id    = $1
@@ -172,11 +177,16 @@ type GetItemThumbnailPathParams struct {
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
-func (q *Queries) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (sql.NullString, error) {
+type GetItemThumbnailPathRow struct {
+	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
+	ThumbnailChecksum string         `db:"thumbnail_checksum"`
+}
+
+func (q *Queries) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (GetItemThumbnailPathRow, error) {
 	row := q.queryRow(ctx, q.getItemThumbnailPathStmt, getItemThumbnailPath, arg.ItemID, arg.AssetType)
-	var item_thumbnail_path sql.NullString
-	err := row.Scan(&item_thumbnail_path)
-	return item_thumbnail_path, err
+	var i GetItemThumbnailPathRow
+	err := row.Scan(&i.ItemThumbnailPath, &i.ThumbnailChecksum)
+	return i, err
 }
 
 const getMultiGroupFiles = `-- name: GetMultiGroupFiles :many

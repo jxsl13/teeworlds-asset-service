@@ -327,19 +327,21 @@ func (q *Queries) UpdateGroupName(ctx context.Context, arg UpdateGroupNameParams
 
 const updateItem = `-- name: UpdateItem :exec
 UPDATE asset_item
-SET    size              = $1,
-       checksum          = $2,
-       item_file_path    = $3,
-       item_thumbnail_path = $7,
-       original_filename = $4
-WHERE  item_id  = $5
-AND    group_id = $6
+SET    size                = $1,
+       checksum            = $2,
+       item_file_path      = $3,
+       item_thumbnail_path = $8,
+       thumbnail_checksum  = $4,
+       original_filename   = $5
+WHERE  item_id  = $6
+AND    group_id = $7
 `
 
 type UpdateItemParams struct {
 	Size              int64          `db:"size"`
 	Checksum          string         `db:"checksum"`
 	ItemFilePath      string         `db:"item_file_path"`
+	ThumbnailChecksum string         `db:"thumbnail_checksum"`
 	OriginalFilename  string         `db:"original_filename"`
 	ItemID            uuid.UUID      `db:"item_id"`
 	GroupID           uuid.UUID      `db:"group_id"`
@@ -351,6 +353,7 @@ func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) error {
 		arg.Size,
 		arg.Checksum,
 		arg.ItemFilePath,
+		arg.ThumbnailChecksum,
 		arg.OriginalFilename,
 		arg.ItemID,
 		arg.GroupID,

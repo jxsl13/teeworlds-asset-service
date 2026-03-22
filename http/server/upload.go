@@ -44,10 +44,11 @@ type uploadContext struct {
 	size             int64
 	checksum         string
 
-	relPath       string            // permanent storage path for the item file
-	absPath       string            // absolute OS path for the item file
-	thumbnailPath stdsql.NullString // DB value for item_thumbnail_path
-	hasTempThumb  bool              // true when a separate _thumb.png was created in tmpDir
+	relPath            string            // permanent storage path for the item file
+	absPath            string            // absolute OS path for the item file
+	thumbnailPath      stdsql.NullString // DB value for item_thumbnail_path
+	thumbnailChecksum  string            // SHA-256 hex of the thumbnail file
+	hasTempThumb       bool              // true when a separate _thumb.png was created in tmpDir
 }
 
 // tmpThumbName returns the temp file name used for a generated thumbnail.
@@ -280,9 +281,17 @@ func (s *Server) prepareThumbnail(uc *uploadContext) (api.UploadItemResponseObje
 		// A separate thumbnail file was created in tmpDir.
 		uc.thumbnailPath = thumbPath
 		uc.hasTempThumb = true
+
+		// Compute SHA-256 of the thumbnail file.
+		tc, err := checksumFile(s.tmpDir, uc.tmpThumbName())
+		if err != nil {
+			return nil, fmt.Errorf("checksum thumbnail: %w", err)
+		}
+		uc.thumbnailChecksum = tc
 	} else if uc.itemType != api.Map {
 		// Source image already fits — reuse its own path as the thumbnail.
 		uc.thumbnailPath = stdsql.NullString{String: uc.relPath, Valid: true}
+		uc.thumbnailChecksum = uc.checksum
 	}
 	// Maps that fail to render get thumbnailPath = NULL (no thumbnail).
 	return nil, nil
@@ -354,6 +363,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 			Checksum:          uc.checksum,
 			ItemFilePath:      uc.relPath,
 			ItemThumbnailPath: uc.thumbnailPath,
+			ThumbnailChecksum: uc.thumbnailChecksum,
 			OriginalFilename:  uc.originalFilename,
 			MaxTotalSize:      s.maxStorageSize,
 		}); err != nil {
@@ -637,6 +647,20 @@ func hashAndWrite(src io.Reader, dst io.Writer) (int64, string, error) {
 		return 0, "", err
 	}
 	return n, hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// checksumFile returns the hex SHA-256 of a file inside the given root.
+func checksumFile(dir *os.Root, name string) (string, error) {
+	f, err := dir.Open(name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // metaToSearchValues converts ItemMetadata into individual search_value rows.

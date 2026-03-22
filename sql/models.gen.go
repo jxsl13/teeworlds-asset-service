@@ -105,6 +105,7 @@ type AssetItem struct {
 	Checksum          string         `db:"checksum"`
 	ItemFilePath      string         `db:"item_file_path"`
 	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
+	ThumbnailChecksum string         `db:"thumbnail_checksum"`
 	OriginalFilename  string         `db:"original_filename"`
 }
 

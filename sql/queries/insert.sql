@@ -11,8 +11,8 @@ AND    group_name = $2
 AND    group_key  = $3;
 
 -- name: InsertItem :execrows
-INSERT INTO asset_item (item_id, group_id, group_value, size, checksum, item_file_path, item_thumbnail_path, original_filename)
-SELECT $1, $2, $3, $4, $5, $6, sqlc.narg(item_thumbnail_path), $7
+INSERT INTO asset_item (item_id, group_id, group_value, size, checksum, item_file_path, item_thumbnail_path, thumbnail_checksum, original_filename)
+SELECT $1, $2, $3, $4, $5, $6, sqlc.narg(item_thumbnail_path), $7, $8
 WHERE (SELECT total_size FROM storage_stats) + $4 <= sqlc.arg(max_total_size);
 
 -- name: InsertItemMetadata :exec

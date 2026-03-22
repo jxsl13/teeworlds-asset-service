@@ -19,8 +19,8 @@ type DAO interface {
 	ListItems(ctx context.Context, arg ListItemsParams) ([]ListItemsRow, error)
 	GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (GetItemFilePathRow, error)
 	GetGroupFilePath(ctx context.Context, arg GetGroupFilePathParams) (GetGroupFilePathRow, error)
-	GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (stdsql.NullString, error)
-	GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (stdsql.NullString, error)
+	GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (GetItemThumbnailPathRow, error)
+	GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (GetGroupThumbnailPathRow, error)
 	GetItemByChecksum(ctx context.Context, checksum string) (GetItemByChecksumRow, error)
 	GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([]GetGroupFilesRow, error)
 	GetMultiGroupFiles(ctx context.Context, groupIDs []uuid.UUID) ([]GetMultiGroupFilesRow, error)
@@ -80,11 +80,11 @@ func (d *dao) GetGroupFilePath(ctx context.Context, arg GetGroupFilePathParams) 
 	return d.q.GetGroupFilePath(ctx, arg)
 }
 
-func (d *dao) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (stdsql.NullString, error) {
+func (d *dao) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (GetItemThumbnailPathRow, error) {
 	return d.q.GetItemThumbnailPath(ctx, arg)
 }
 
-func (d *dao) GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (stdsql.NullString, error) {
+func (d *dao) GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (GetGroupThumbnailPathRow, error) {
 	return d.q.GetGroupThumbnailPath(ctx, groupID)
 }
 
