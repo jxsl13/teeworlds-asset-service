@@ -191,6 +191,9 @@ func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackU
 
 	for _, cl := range list.Data {
 		if cl.Name == name {
+			if err := c.updateOIDCClient(ctx, cl.ID, name, callbackURLs, logoutURLs); err != nil {
+				return "", err
+			}
 			return cl.ID, nil
 		}
 	}
@@ -208,6 +211,19 @@ func (c *apiClient) ensureOIDCClient(ctx context.Context, name string, callbackU
 		return "", err
 	}
 	return created.ID, nil
+}
+
+func (c *apiClient) updateOIDCClient(ctx context.Context, clientID, name string, callbackURLs, logoutURLs []string) error {
+	body := map[string]any{
+		"name":               name,
+		"callbackURLs":       callbackURLs,
+		"logoutCallbackURLs": logoutURLs,
+		"isPublic":           false,
+		"pkceEnabled":        true,
+	}
+
+	var updated oidcClient
+	return c.do(ctx, http.MethodPut, "/api/oidc/clients/"+clientID, body, &updated)
 }
 
 func (c *apiClient) createClientSecret(ctx context.Context, clientID string) (string, error) {
