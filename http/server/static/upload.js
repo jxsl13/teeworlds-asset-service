@@ -205,7 +205,7 @@ var licenseOptions =
   '<option value="apache-2">Apache 2.0</option>' +
   '<option value="zlib">zlib</option>' +
   '<option value="custom">Custom / Other</option>' +
-  '<option value="unknown">Unknown</option>';
+  '<option value="unknown" selected>Unknown</option>';
 
 function nameFromFile(filename) {
   return filename.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
@@ -215,6 +215,34 @@ function escapeHtml(s) {
   var d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+/* ── License matching ──────────────────────────────────────────────────────── */
+/*
+  matchLicense maps a free-form license string from the map info to the
+  closest dropdown option value. Returns the option value or null.
+*/
+function matchLicense(raw) {
+  var s = raw.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  var patterns = [
+    [/\bcc\b.*\bby\b.*\bnc\b.*\bsa\b/,   'cc-by-nc-sa'],
+    [/\bcc\b.*\bby\b.*\bnc\b.*\bnd\b/,   'cc-by-nc-nd'],
+    [/\bcc\b.*\bby\b.*\bnc\b/,            'cc-by-nc'],
+    [/\bcc\b.*\bby\b.*\bsa\b/,            'cc-by-sa'],
+    [/\bcc\b.*\bby\b.*\bnd\b/,            'cc-by-nd'],
+    [/\bcc\b.*\bby\b/,                    'cc-by'],
+    [/\bcc\s*0\b|\bcc\b.*\bzero\b|\bpublic\s*domain\b/, 'cc0'],
+    [/\bgpl\b.*\b3\b/,                    'gpl-3'],
+    [/\bgpl\b.*\b2\b/,                    'gpl-2'],
+    [/\bgpl\b/,                            'gpl-3'],
+    [/\bmit\b/,                            'mit'],
+    [/\bapache\b/,                         'apache-2'],
+    [/\bzlib\b/,                           'zlib']
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    if (patterns[i][0].test(s)) return patterns[i][1];
+  }
+  return null;
 }
 
 /* ── Tag input helpers ─────────────────────────────────────────────────────── */
@@ -297,11 +325,192 @@ document.getElementById('uploadModal').addEventListener('click', function (e) {
   if (e.target === this) closeUpload();
 });
 
+/* ── Map info parser ────────────────────────────────────────────────────────── */
+/*
+  parseMapInfo reads a Teeworlds/DDNet .map file (ArrayBuffer) and extracts
+  the info item (author, version, credits, license).
+  Returns { author, version, credits, license } or null if the info item
+  is missing or cannot be parsed.
+*/
+async function parseMapInfo(buffer) {
+  var view = new DataView(buffer);
+  if (buffer.byteLength < 36) return null;
+
+  var magic = String.fromCharCode(
+    view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+  if (magic !== 'DATA' && magic !== 'ATAD') return null;
+
+  var fileVersion = view.getInt32(4, true);
+  if (fileVersion !== 3 && fileVersion !== 4) return null;
+
+  var numItemTypes = view.getInt32(16, true);
+  var numItems     = view.getInt32(20, true);
+  var numData      = view.getInt32(24, true);
+  var sizeItems    = view.getInt32(28, true);
+  var sizeData     = view.getInt32(32, true);
+  if (numItemTypes < 0 || numItems < 0 || numData < 0 ||
+      sizeItems < 0 || sizeData < 0) return null;
+
+  /* Section offsets after the 36-byte header. */
+  var off            = 36;
+  var itemOffsetsOff = off + numItemTypes * 12;
+  var dataOffsetsOff = itemOffsetsOff + numItems * 4;
+  var dataSizesEnd   = dataOffsetsOff + numData * 4;
+  var itemsBlockOff  = (fileVersion >= 4) ? dataSizesEnd + numData * 4 : dataSizesEnd;
+  var dataBlockOff   = itemsBlockOff + sizeItems;
+
+  if (dataBlockOff + sizeData > buffer.byteLength) return null;
+
+  /* Read item offsets. */
+  var itemOffsets = [];
+  for (var i = 0; i < numItems; i++) {
+    itemOffsets.push(view.getInt32(itemOffsetsOff + i * 4, true));
+  }
+
+  /* Read data offsets. */
+  var dataOffsets = [];
+  for (var i = 0; i < numData; i++) {
+    dataOffsets.push(view.getInt32(dataOffsetsOff + i * 4, true));
+  }
+
+  /* Find info item (typeID=1, id=0) in the items block. */
+  var infoData = null;
+  for (var i = 0; i < numItems; i++) {
+    var itemOff = itemsBlockOff + itemOffsets[i];
+    if (itemOff + 8 > buffer.byteLength) continue;
+    var typeIDAndID = view.getInt32(itemOff, true);
+    var typeID = (typeIDAndID >>> 16) & 0xFFFF;
+    var id     = typeIDAndID & 0xFFFF;
+    if (typeID === 1 && id === 0) {
+      var itemSize = view.getInt32(itemOff + 4, true);
+      if (itemSize < 0 || itemSize % 4 !== 0) return null;
+      var numInt32s = itemSize / 4;
+      if (numInt32s < 5) return null;
+      infoData = [];
+      for (var j = 0; j < numInt32s; j++) {
+        infoData.push(view.getInt32(itemOff + 8 + j * 4, true));
+      }
+      break;
+    }
+  }
+  if (!infoData) return null;
+
+  /* Decompress a data block and return it as a string. */
+  function readDataStr(dataIdx) {
+    if (dataIdx < 0 || dataIdx >= numData) return Promise.resolve('');
+    var start = dataOffsets[dataIdx];
+    var end   = (dataIdx + 1 < numData) ? dataOffsets[dataIdx + 1] : sizeData;
+    if (start < 0 || end < start) return Promise.resolve('');
+
+    var chunk = buffer.slice(dataBlockOff + start, dataBlockOff + end);
+    if (fileVersion === 3) {
+      var bytes = new Uint8Array(chunk);
+      var len = bytes.length;
+      while (len > 0 && bytes[len - 1] === 0) len--;
+      return Promise.resolve(new TextDecoder().decode(bytes.subarray(0, len)));
+    }
+
+    /* v4: zlib (RFC 1950) compressed */
+    var ds = new DecompressionStream('deflate');
+    var writer = ds.writable.getWriter();
+    writer.write(new Uint8Array(chunk));
+    writer.close();
+    return new Response(ds.readable).arrayBuffer().then(function (ab) {
+      var out = new Uint8Array(ab);
+      var len = out.length;
+      while (len > 0 && out[len - 1] === 0) len--;
+      return new TextDecoder().decode(out.subarray(0, len));
+    }).catch(function () { return ''; });
+  }
+
+  /* infoData: [0]=version, [1]=author, [2]=mapversion, [3]=credits, [4]=license */
+  return Promise.all([
+    readDataStr(infoData[1]),
+    readDataStr(infoData[2]),
+    readDataStr(infoData[3]),
+    readDataStr(infoData[4])
+  ]).then(function (strings) {
+    var result = { author: strings[0], version: strings[1], credits: strings[2], license: strings[3] };
+    console.log('[mapInfo] parsed:', result);
+    return result;
+  });
+}
+
+/* ── Process map files (async with info validation) ────────────────────────── */
+async function processMapFiles(files) {
+  var gs = document.getElementById('uploadGlobalStatus');
+  gs.textContent = 'Reading map files\u2026';
+  gs.className = 'upload-status';
+
+  var errors = [];
+  var validFiles = [];
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    try {
+      var buf = await f.arrayBuffer();
+      var info = await parseMapInfo(buf);
+      console.log('[mapInfo] file=%s info=%o', f.name, info);
+      if (!info) {
+        errors.push(f.name + ': missing map info (author/license metadata)');
+        continue;
+      }
+      validFiles.push({ file: f, info: info });
+    } catch (e) {
+      errors.push(f.name + ': failed to parse map file');
+    }
+  }
+
+  if (errors.length) {
+    gs.textContent = errors.join('; ');
+    gs.className = 'upload-status error';
+  } else {
+    gs.textContent = '';
+    gs.className = 'upload-status';
+  }
+
+  if (!validFiles.length) return;
+
+  var nameToGroup = {};
+  Object.keys(uploadGroups).forEach(function (gid) {
+    var g = uploadGroups[gid];
+    nameToGroup[g.name.toLowerCase()] = g.id;
+  });
+
+  validFiles.forEach(function (vf) {
+    var fid  = nextFileId++;
+    var name = nameFromFile(vf.file.name);
+    var key  = name.toLowerCase();
+
+    var gid;
+    if (nameToGroup[key] !== undefined) {
+      gid = nameToGroup[key];
+    } else {
+      gid = nextGroupId++;
+      uploadGroups[gid] = { id: gid, name: name, fileIds: [], mapInfo: vf.info };
+      nameToGroup[key] = gid;
+    }
+
+    uploadFileMap[fid] = { id: fid, file: vf.file, groupId: gid };
+    uploadGroups[gid].fileIds.push(fid);
+  });
+
+  renderUploadGroups();
+  document.getElementById('uploadStep1').style.display = 'none';
+  document.getElementById('uploadStep2').style.display = '';
+}
+
 /* ── File selection → auto-group by derived name ───────────────────────────── */
 function onFilesSelected(input) {
   var files = Array.from(input.files);
   if (!files.length) return;
   input.value = '';
+
+  /* Maps: parse info field, reject files missing it. */
+  if (activeType === 'map') {
+    processMapFiles(files);
+    return;
+  }
 
   /* Build a map: derivedName → existing groupId (if any). */
   var nameToGroup = {};
@@ -372,6 +581,31 @@ function renderUploadGroups() {
 
     container.appendChild(div);
     initTagInput(div.querySelector('.tag-input'));
+
+    /* Pre-fill creators & license from map info (if available). */
+    if (g.mapInfo) {
+      console.log('[mapInfo] pre-fill group %s: author=%s credits=%s license=%s',
+        g.name, JSON.stringify(g.mapInfo.author), JSON.stringify(g.mapInfo.credits), JSON.stringify(g.mapInfo.license));
+      var creatorStr = g.mapInfo.author || g.mapInfo.credits || '';
+      if (creatorStr) {
+        var tagContainer = div.querySelector('.tag-input');
+        var tagInput = tagContainer.querySelector('input');
+        creatorStr.split(/[,&]|\band\b/i).forEach(function (c) {
+          c = c.trim();
+          if (c) {
+            tagInput.value = c;
+            commitTag(tagContainer, tagInput);
+          }
+        });
+      }
+      if (g.mapInfo.license) {
+        var licSel = div.querySelector('.ui-license');
+        var matched = matchLicense(g.mapInfo.license);
+        console.log('[mapInfo] license raw=%s matched=%s', JSON.stringify(g.mapInfo.license), JSON.stringify(matched));
+        licSel.value = matched || 'unknown';
+      }
+    }
+
     setupGroupDropZone(div, g.id);
     renderGroupFiles(g.id);
   });
@@ -429,6 +663,13 @@ function onGroupFilesSelected(input, gid) {
   var files = Array.from(input.files);
   input.value = '';
   if (!files.length) return;
+
+  /* Maps: validate info field before accepting. */
+  if (activeType === 'map') {
+    addMapFilesToGroup(files, gid);
+    return;
+  }
+
   var g = uploadGroups[gid];
   if (!g) return;
   files.forEach(function (f) {
@@ -436,6 +677,38 @@ function onGroupFilesSelected(input, gid) {
     uploadFileMap[fid] = { id: fid, file: f, groupId: gid };
     g.fileIds.push(fid);
   });
+  renderGroupFiles(gid);
+}
+
+async function addMapFilesToGroup(files, gid) {
+  var g = uploadGroups[gid];
+  if (!g) return;
+  var errors = [];
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    try {
+      var buf = await f.arrayBuffer();
+      var info = await parseMapInfo(buf);
+      if (!info) {
+        errors.push(f.name);
+        continue;
+      }
+      var fid = nextFileId++;
+      uploadFileMap[fid] = { id: fid, file: f, groupId: gid };
+      g.fileIds.push(fid);
+    } catch (e) {
+      errors.push(f.name);
+    }
+  }
+
+  if (errors.length) {
+    var st = document.getElementById('upload-group-status-' + gid);
+    if (st) {
+      st.textContent = 'Rejected (no map info): ' + errors.join(', ');
+      st.className = 'upload-group-status error';
+    }
+  }
   renderGroupFiles(gid);
 }
 

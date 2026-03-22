@@ -24,6 +24,7 @@ import (
 	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/oidcauth"
 	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/ratelimit"
 	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/requestlog"
+	"github.com/jxsl13/teeworlds-asset-service/internal/twmap"
 	postgresql "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
@@ -41,6 +42,11 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
+	}
+
+	// ── External tilesets ─────────────────────────────────────────────────
+	if err := twmap.Init(); err != nil {
+		return fmt.Errorf("twmap init: %w", err)
 	}
 
 	// ── Database ──────────────────────────────────────────────────────────────

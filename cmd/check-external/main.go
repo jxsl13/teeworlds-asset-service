@@ -9,6 +9,11 @@ import (
 )
 
 func main() {
+	if err := twmap.Init(); err != nil {
+		fmt.Fprintln(os.Stderr, "twmap init:", err)
+		os.Exit(1)
+	}
+
 	f, err := os.Open(os.Args[1])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
