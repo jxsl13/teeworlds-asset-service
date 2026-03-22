@@ -19,9 +19,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -154,8 +156,15 @@ func main() {
 			if err := throttle.Wait(ctx); err != nil {
 				return
 			}
-			mapData, err := downloadMap(m.Type, m.Name)
-			if err != nil {
+			var mapData []byte
+			if err := seedutil.Retry(ctx, func() error {
+				var e error
+				mapData, e = downloadMap(m.Type, m.Name)
+				return e
+			}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				log.Printf("FAIL  download  %-40s (%s) %v", m.Name, m.Type, err)
 				failCount.Add(1)
 				return
@@ -164,9 +173,14 @@ func main() {
 			if err := throttle.Wait(ctx); err != nil {
 				return
 			}
-			err = seedutil.UploadAsset(uploadClient, csrfToken, *addr, "map", m.Name, ddnetMapsLicense, m.Creators, m.Name+".map", mapData)
-			if err != nil {
-				if strings.Contains(err.Error(), "409") {
+			if err := seedutil.Retry(ctx, func() error {
+				return seedutil.UploadAsset(uploadClient, csrfToken, *addr, "map", m.Name, ddnetMapsLicense, m.Creators, m.Name+".map", mapData)
+			}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				var httpErr *seedutil.HTTPStatusError
+				if errors.As(err, &httpErr) && httpErr.StatusCode == 409 {
 					skipCount.Add(1)
 					return
 				}

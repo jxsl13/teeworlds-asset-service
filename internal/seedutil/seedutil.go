@@ -4,16 +4,37 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"math/rand/v2"
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
+
+// ── HTTP error type ──────────────────────────────────────────────────────────
+
+// HTTPStatusError is returned by HTTP helpers when the server responds with an
+// unexpected status code.  Using a typed error allows callers to inspect the
+// code without parsing the error string.
+type HTTPStatusError struct {
+	StatusCode int
+	Body       string // optional response body snippet
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e.Body != "" {
+		return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+	}
+	return fmt.Sprintf("HTTP %d", e.StatusCode)
+}
 
 // ── rate limiting ────────────────────────────────────────────────────────────
 
@@ -66,6 +87,57 @@ func (t *Throttle) Stop() {
 	}
 }
 
+// Retry calls fn in a loop, retrying with exponential backoff whenever fn
+// returns a context.DeadlineExceeded error (HTTP client timeout) or an
+// HTTPStatusError whose status code is in the given retryable codes list.
+// The delay starts at 5 s, doubles on each attempt, and is capped at 60 s;
+// a random jitter of up to half the current delay is added each time.
+// The loop stops immediately on any other error, on success, or when the
+// parent ctx is cancelled.
+func Retry(ctx context.Context, fn func() error, codes ...int) error {
+	const (
+		minDelay = 5 * time.Second
+		maxDelay = 60 * time.Second
+	)
+	delay := minDelay
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		retryable := false
+		if errors.Is(err, context.DeadlineExceeded) {
+			retryable = true
+		} else {
+			var httpErr *HTTPStatusError
+			if errors.As(err, &httpErr) {
+				if slices.Contains(codes, httpErr.StatusCode) {
+					retryable = true
+				}
+			}
+		}
+		if !retryable {
+			return err
+		}
+		// Exponential backoff with jitter: sleep in [delay/2, delay].
+		jitter := time.Duration(rand.Int64N(int64(delay)/2 + 1))
+		sleep := delay/2 + jitter
+		if sleep > maxDelay {
+			sleep = maxDelay
+		}
+		log.Printf("retryable error (%v) — retrying in %s …", err, sleep.Round(time.Millisecond))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(sleep):
+		}
+		delay = min(delay*2, maxDelay)
+	}
+}
+
 const userAgent = "teeworlds-asset-db-seeder/1.0"
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -90,7 +162,8 @@ func FetchBytes(rawURL string, maxBytes int64) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, rawURL)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode}
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
@@ -214,7 +287,7 @@ func UploadAsset(client *http.Client, csrfToken, baseURL, assetType, name, licen
 		// Already exists — not an error for seeding.
 		return nil
 	default:
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return &HTTPStatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 }
 

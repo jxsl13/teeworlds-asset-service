@@ -136,8 +136,15 @@ func main() {
 				return
 			}
 			imgURL := skinImageURL(s, false)
-			imgData, err := seedutil.FetchBytes(imgURL, 10<<20)
-			if err != nil {
+			var imgData []byte
+			if err := seedutil.Retry(ctx, func() error {
+				var e error
+				imgData, e = seedutil.FetchBytes(imgURL, 10<<20)
+				return e
+			}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				log.Printf("FAIL  download  %-40s %v", s.Name, err)
 				failCount.Add(1)
 				return
@@ -146,8 +153,12 @@ func main() {
 			if err := throttle.Wait(ctx); err != nil {
 				return
 			}
-			err = seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", imgData)
-			if err != nil {
+			if err := seedutil.Retry(ctx, func() error {
+				return seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", imgData)
+			}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				log.Printf("FAIL  upload    %-40s %v", s.Name, err)
 				failCount.Add(1)
 				return
@@ -164,8 +175,15 @@ func main() {
 					return
 				}
 				uhdURL := skinImageURL(s, true)
-				uhdData, err := seedutil.FetchBytes(uhdURL, 10<<20)
-				if err != nil {
+				var uhdData []byte
+				if err := seedutil.Retry(ctx, func() error {
+					var e error
+					uhdData, e = seedutil.FetchBytes(uhdURL, 10<<20)
+					return e
+				}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+					if ctx.Err() != nil {
+						return
+					}
 					log.Printf("FAIL  download  %-40s (UHD) %v", s.Name, err)
 					failCount.Add(1)
 					return
@@ -174,8 +192,12 @@ func main() {
 				if err := throttle.Wait(ctx); err != nil {
 					return
 				}
-				err = seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", uhdData)
-				if err != nil {
+				if err := seedutil.Retry(ctx, func() error {
+					return seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", uhdData)
+				}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+					if ctx.Err() != nil {
+						return
+					}
 					log.Printf("FAIL  upload    %-40s (UHD) %v", s.Name, err)
 					failCount.Add(1)
 					return
