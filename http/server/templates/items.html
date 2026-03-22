@@ -43,11 +43,11 @@
         <div class="thumb-placeholder">{{.ItemType}}</div>
         {{end}}
       </td>
-      <td class="col-name">{{.Name}}</td>
-      <td class="col-creators">{{range .CreatorList}}<span class="filter-chip" data-field="creator" data-value="{{.}}" onclick="filterByCell(this)">{{.}}</span>{{end}}</td>
-      <td class="col-license">{{if .License}}<span class="filter-chip" data-field="license" data-value="{{.License}}" onclick="filterByCell(this)">{{.License}}</span>{{end}}</td>
-      <td class="col-size">{{.Size}}</td>
-      <td class="col-created_at">{{if .Date}}<span class="filter-chip" data-field="date" data-value="{{.Date}}" onclick="filterByCell(this)">{{.Date}}</span>{{end}}</td>
+      <td class="col-name" data-label="Name">{{.Name}}</td>
+      <td class="col-creators" data-label="Creators">{{range .CreatorList}}<span class="filter-chip" data-field="creator" data-value="{{.}}" onclick="filterByCell(this)">{{.}}</span>{{end}}</td>
+      <td class="col-license" data-label="License">{{if .License}}<span class="filter-chip" data-field="license" data-value="{{.License}}" onclick="filterByCell(this)">{{.License}}</span>{{end}}</td>
+      <td class="col-size" data-label="Size">{{.Size}}</td>
+      <td class="col-created_at" data-label="Date">{{if .Date}}<span class="filter-chip" data-field="date" data-value="{{.Date}}" onclick="filterByCell(this)">{{.Date}}</span>{{end}}</td>
       <td class="col-actions">
         {{if .Variants}}
           {{$type := .ItemType}}
