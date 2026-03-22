@@ -1,6 +1,8 @@
 package model
 
 import (
+	"github.com/google/uuid"
+
 	"github.com/jxsl13/teeworlds-asset-service/http/api"
 	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
@@ -36,7 +38,7 @@ func SearchResultFromByTypeRows(rows []sqlc.SearchByTypeRow) SearchResult {
 	items := make([]Item, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, Item{
-			GroupID:   row.GroupID,
+			GroupID:   uuid.UUID(row.GroupID.Bytes),
 			AssetType: row.AssetType,
 			GroupName: row.GroupName,
 			GroupKey:  row.GroupKey,
@@ -44,7 +46,7 @@ func SearchResultFromByTypeRows(rows []sqlc.SearchByTypeRow) SearchResult {
 			License:   row.License,
 			Variants:  row.Variants,
 			TotalSize: row.TotalSize,
-			CreatedAt: row.CreatedAt,
+			CreatedAt: row.CreatedAt.Time,
 			Score:     row.Sml,
 		})
 	}

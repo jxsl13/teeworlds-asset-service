@@ -6,15 +6,14 @@ require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/donseba/go-htmx v1.12.1
 	github.com/dustin/go-humanize v1.0.1
+	github.com/gen2brain/webp v0.5.5
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
-	github.com/jackc/pgx/v5 v5.8.0
-	github.com/klauspost/compress v1.18.4
-	github.com/lib/pq v1.10.9
-	github.com/oapi-codegen/runtime v1.2.0
-	github.com/sqlc-dev/pqtype v0.3.0
+	github.com/jackc/pgx/v5 v5.9.1
+	github.com/klauspost/compress v1.18.5
+	github.com/oapi-codegen/runtime v1.3.0
 	golang.org/x/image v0.37.0
 	golang.org/x/oauth2 v0.36.0
 )
@@ -27,6 +26,7 @@ require (
 	github.com/cubicdaiya/gonp v1.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
+	github.com/ebitengine/purego v0.8.3 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/getkin/kin-openapi v0.133.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect

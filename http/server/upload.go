@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/sha256"
-	stdsql "database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,20 +11,20 @@ import (
 	"image/png"
 	"io"
 	"mime/multipart"
-	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/gen2brain/webp"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jxsl13/teeworlds-asset-service/http/api"
 	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/clientip"
 	"github.com/jxsl13/teeworlds-asset-service/internal/twmap"
 	"github.com/jxsl13/teeworlds-asset-service/internal/twskin"
 	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
-	"github.com/sqlc-dev/pqtype"
 	"golang.org/x/image/draw"
 )
 
@@ -44,16 +43,16 @@ type uploadContext struct {
 	size             int64
 	checksum         string
 
-	relPath            string            // permanent storage path for the item file
-	absPath            string            // absolute OS path for the item file
-	thumbnailPath      stdsql.NullString // DB value for item_thumbnail_path
-	thumbnailChecksum  string            // SHA-256 hex of the thumbnail file
-	hasTempThumb       bool              // true when a separate _thumb.png was created in tmpDir
+	relPath           string  // permanent storage path for the item file
+	absPath           string  // absolute OS path for the item file
+	thumbnailPath     *string // DB value for item_thumbnail_path
+	thumbnailChecksum string  // SHA-256 hex of the thumbnail file
+	hasTempThumb      bool    // true when a separate thumbnail was created in tmpDir
 }
 
 // tmpThumbName returns the temp file name used for a generated thumbnail.
 func (u *uploadContext) tmpThumbName() string {
-	return u.itemID.String() + "_thumb.png"
+	return u.itemID.String() + "_thumb.webp"
 }
 
 func (u *uploadContext) tmpName() string {
@@ -262,11 +261,11 @@ func (s *Server) buildStoragePaths(uc *uploadContext) {
 // Thumbnail path semantics:
 //
 //   - Maps are not images themselves, so a thumbnail is always rendered into a
-//     separate file under /<asset_type>/thumbnails/<uuid>.png. The DB column
+//     separate file under /<asset_type>/thumbnails/<uuid>.webp. The DB column
 //     item_thumbnail_path points to that dedicated file.
 //
 //   - Image-based types (skins, gameskins, …) that exceed the configured
-//     bounding box also get a scaled-down copy in /thumbnails/<uuid>.png.
+//     bounding box also get a scaled-down copy in /thumbnails/<uuid>.webp.
 //
 //   - Image-based types that already fit within the bounding box need no extra
 //     thumbnail file. Their item_thumbnail_path points back to the original
@@ -277,7 +276,7 @@ func (s *Server) prepareThumbnail(uc *uploadContext) (api.UploadItemResponseObje
 		return nil, fmt.Errorf("generate thumbnail: %w", err)
 	}
 
-	if thumbPath.Valid {
+	if thumbPath != nil {
 		// A separate thumbnail file was created in tmpDir.
 		uc.thumbnailPath = thumbPath
 		uc.hasTempThumb = true
@@ -290,7 +289,7 @@ func (s *Server) prepareThumbnail(uc *uploadContext) (api.UploadItemResponseObje
 		uc.thumbnailChecksum = tc
 	} else if uc.itemType != api.Map {
 		// Source image already fits — reuse its own path as the thumbnail.
-		uc.thumbnailPath = stdsql.NullString{String: uc.relPath, Valid: true}
+		uc.thumbnailPath = &uc.relPath
 		uc.thumbnailChecksum = uc.checksum
 	}
 	// Maps that fail to render get thumbnailPath = NULL (no thumbnail).
@@ -308,7 +307,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 			GroupName: uc.meta.Name,
 			GroupKey:  uc.groupKey,
 		})
-		if errors.Is(err, stdsql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			// Group does not exist yet — this upload would create a new group.
 			since := time.Now().Add(-s.rateLimitWindow)
 			count, err := s.dao.CountGroupsCreatedByIP(ctx, addr, since)
@@ -326,7 +325,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 	txErr := s.dao.Tx(ctx, func(tx sqlc.DAO) error {
 		// Upsert the group (creates if new, no-ops if name+key already exists).
 		if err := tx.UpsertGroup(ctx, sqlc.UpsertGroupParams{
-			GroupID:   uc.groupID,
+			GroupID:   uuidToPgtype(uc.groupID),
 			AssetType: sqlc.AssetTypeEnum(uc.itemType),
 			GroupName: uc.meta.Name,
 			GroupKey:  uc.groupKey,
@@ -343,7 +342,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 		if err != nil {
 			return fmt.Errorf("get group ID: %w", err)
 		}
-		uc.groupID = existingGroupID
+		uc.groupID = uuid.UUID(existingGroupID.Bytes)
 
 		// Now that we know the real groupID, compute storage paths and thumbnail.
 		s.buildStoragePaths(uc)
@@ -356,8 +355,8 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 		}
 
 		if err := tx.InsertItemChecked(ctx, sqlc.InsertItemParams{
-			ItemID:            uc.itemID,
-			GroupID:           uc.groupID,
+			ItemID:            uuidToPgtype(uc.itemID),
+			GroupID:           uuidToPgtype(uc.groupID),
 			GroupValue:        uc.groupValue,
 			Size:              uc.size,
 			Checksum:          uc.checksum,
@@ -374,7 +373,7 @@ func (s *Server) persistUpload(ctx context.Context, uc *uploadContext) (api.Uplo
 			return err
 		}
 
-		for _, sv := range metaToSearchValues(uc.groupID, uc.meta) {
+		for _, sv := range metaToSearchValues(uuidToPgtype(uc.groupID), uc.meta) {
 			if err := tx.InsertSearchValue(ctx, sv); err != nil {
 				return err
 			}
@@ -404,7 +403,7 @@ func (s *Server) moveToStorage(uc *uploadContext) error {
 	}
 
 	if uc.hasTempThumb {
-		thumbAbsPath := filepath.Join(string(s.fsys), filepath.FromSlash(uc.thumbnailPath.String))
+		thumbAbsPath := filepath.Join(string(s.fsys), filepath.FromSlash(*uc.thumbnailPath))
 		if err := moveFile(s.tmpDir, uc.tmpThumbName(), thumbAbsPath); err != nil {
 			return fmt.Errorf("move thumbnail file: %w", err)
 		}
@@ -418,21 +417,21 @@ func (s *Server) moveToStorage(uc *uploadContext) error {
 func (s *Server) cleanupStorage(uc *uploadContext) {
 	_ = os.Remove(uc.absPath)
 	if uc.hasTempThumb {
-		thumbAbsPath := filepath.Join(string(s.fsys), filepath.FromSlash(uc.thumbnailPath.String))
+		thumbAbsPath := filepath.Join(string(s.fsys), filepath.FromSlash(*uc.thumbnailPath))
 		_ = os.Remove(thumbAbsPath)
 	}
 }
 
 // ── thumbnail generation ──────────────────────────────────────────────────────
 
-// generateThumbnail creates a PNG thumbnail for the uploaded item.
-// Returns a valid NullString with the thumbnail's relative storage path when a
-// separate file was written, or an invalid NullString when no file was created.
-func (s *Server) generateThumbnail(itemType api.ItemType, itemID, groupID uuid.UUID, tmpDir *os.Root, tmpName string) (stdsql.NullString, error) {
-	thumbRelPath := fmt.Sprintf("/%s/%s/thumbnails/%s.png", itemType, groupID, itemID)
+// generateThumbnail creates a WebP thumbnail for the uploaded item.
+// Returns a non-nil string pointer with the thumbnail's relative storage path when a
+// separate file was written, or nil when no file was created.
+func (s *Server) generateThumbnail(itemType api.ItemType, itemID, groupID uuid.UUID, tmpDir *os.Root, tmpName string) (*string, error) {
+	thumbRelPath := fmt.Sprintf("/%s/%s/thumbnails/%s.webp", itemType, groupID, itemID)
 	size, ok := s.thumbnailSizes[string(itemType)]
 	if !ok {
-		return stdsql.NullString{}, nil // no thumbnail config for this type
+		return nil, nil // no thumbnail config for this type
 	}
 	maxW, maxH := size.Width, size.Height
 
@@ -444,91 +443,91 @@ func (s *Server) generateThumbnail(itemType api.ItemType, itemID, groupID uuid.U
 	case api.Gameskin, api.Hud, api.Entity, api.Theme, api.Template, api.Emoticon:
 		return s.generateImageThumbnail(itemID, tmpDir, tmpName, thumbRelPath, maxW, maxH)
 	default:
-		return stdsql.NullString{}, nil
+		return nil, nil
 	}
 }
 
 // generateMapThumbnail renders the map at exactly the bounding box dimensions.
-func (s *Server) generateMapThumbnail(itemID uuid.UUID, tmpDir *os.Root, tmpName, thumbRelPath string, maxW, maxH int) (stdsql.NullString, error) {
+func (s *Server) generateMapThumbnail(itemID uuid.UUID, tmpDir *os.Root, tmpName, thumbRelPath string, maxW, maxH int) (*string, error) {
 	f, err := tmpDir.Open(tmpName)
 	if err != nil {
-		return stdsql.NullString{}, fmt.Errorf("open map for thumbnail: %w", err)
+		return nil, fmt.Errorf("open map for thumbnail: %w", err)
 	}
 	defer f.Close()
 
 	img, err := twmap.Render(f, maxW, maxH)
 	if err != nil {
-		return stdsql.NullString{}, fmt.Errorf("render map thumbnail: %w", err)
+		return nil, fmt.Errorf("render map thumbnail: %w", err)
 	}
 
-	return s.writeThumbnailPNG(itemID, tmpDir, img, thumbRelPath)
+	return s.writeThumbnailWebP(itemID, tmpDir, img, thumbRelPath)
 }
 
 // generateSkinThumbnail composites the Tee character from the skin sprite sheet
 // in an idle front-facing pose with default eyes, scaled to the base TW 0.6
 // resolution (256x128 skin, 32px grid cells).
-func (s *Server) generateSkinThumbnail(itemID uuid.UUID, tmpDir *os.Root, tmpName, thumbRelPath string) (stdsql.NullString, error) {
+func (s *Server) generateSkinThumbnail(itemID uuid.UUID, tmpDir *os.Root, tmpName, thumbRelPath string) (*string, error) {
 	f, err := tmpDir.Open(tmpName)
 	if err != nil {
-		return stdsql.NullString{}, fmt.Errorf("open skin for thumbnail: %w", err)
+		return nil, fmt.Errorf("open skin for thumbnail: %w", err)
 	}
 	defer f.Close()
 
 	img, err := twskin.RenderIdleTee(f)
 	if err != nil {
-		return stdsql.NullString{}, fmt.Errorf("render skin thumbnail: %w", err)
+		return nil, fmt.Errorf("render skin thumbnail: %w", err)
 	}
 
-	return s.writeThumbnailPNG(itemID, tmpDir, img, thumbRelPath)
+	return s.writeThumbnailWebP(itemID, tmpDir, img, thumbRelPath)
 }
 
 // generateImageThumbnail scales down a PNG that exceeds the bounding box.
 // Returns an invalid NullString when the source already fits (no file created).
-func (s *Server) generateImageThumbnail(itemID uuid.UUID, tmpDir *os.Root, tmpName, thumbRelPath string, maxW, maxH int) (stdsql.NullString, error) {
+func (s *Server) generateImageThumbnail(itemID uuid.UUID, tmpDir *os.Root, tmpName, thumbRelPath string, maxW, maxH int) (*string, error) {
 	f, err := tmpDir.Open(tmpName)
 	if err != nil {
-		return stdsql.NullString{}, fmt.Errorf("open image for thumbnail: %w", err)
+		return nil, fmt.Errorf("open image for thumbnail: %w", err)
 	}
 
 	src, err := png.Decode(f)
 	_ = f.Close()
 	if err != nil {
-		return stdsql.NullString{}, fmt.Errorf("decode png for thumbnail: %w", err)
+		return nil, fmt.Errorf("decode png for thumbnail: %w", err)
 	}
 
 	bounds := src.Bounds()
 	srcW, srcH := bounds.Dx(), bounds.Dy()
 
 	if srcW <= maxW && srcH <= maxH {
-		return stdsql.NullString{}, nil // source fits — caller will reuse relPath
+		return nil, nil // source fits — caller will reuse relPath
 	}
 
 	dstW, dstH := fitInBox(srcW, srcH, maxW, maxH)
 	dst := image.NewNRGBA(image.Rect(0, 0, dstW, dstH))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Over, nil)
 
-	return s.writeThumbnailPNG(itemID, tmpDir, dst, thumbRelPath)
+	return s.writeThumbnailWebP(itemID, tmpDir, dst, thumbRelPath)
 }
 
-// writeThumbnailPNG encodes img as PNG into a temp file.
-func (s *Server) writeThumbnailPNG(itemID uuid.UUID, tmpDir *os.Root, img image.Image, thumbRelPath string) (stdsql.NullString, error) {
-	tmpThumbName := itemID.String() + "_thumb.png"
+// writeThumbnailWebP encodes img as lossless WebP into a temp file.
+func (s *Server) writeThumbnailWebP(itemID uuid.UUID, tmpDir *os.Root, img image.Image, thumbRelPath string) (*string, error) {
+	tmpThumbName := itemID.String() + "_thumb.webp"
 	tf, err := tmpDir.OpenFile(tmpThumbName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
 	if err != nil {
-		return stdsql.NullString{}, fmt.Errorf("create temp thumbnail: %w", err)
+		return nil, fmt.Errorf("create temp thumbnail: %w", err)
 	}
 
-	if err := png.Encode(tf, img); err != nil {
+	if err := webp.Encode(tf, img, webp.Options{Lossless: true}); err != nil {
 		_ = tf.Close()
 		_ = tmpDir.Remove(tmpThumbName)
-		return stdsql.NullString{}, fmt.Errorf("encode thumbnail png: %w", err)
+		return nil, fmt.Errorf("encode thumbnail webp: %w", err)
 	}
 	if err := tf.Close(); err != nil {
 		_ = tmpDir.Remove(tmpThumbName)
-		return stdsql.NullString{}, fmt.Errorf("close thumbnail: %w", err)
+		return nil, fmt.Errorf("close thumbnail: %w", err)
 	}
 
-	return stdsql.NullString{String: thumbRelPath, Valid: true}, nil
+	return &thumbRelPath, nil
 }
 
 // ── utility helpers ───────────────────────────────────────────────────────────
@@ -664,7 +663,7 @@ func checksumFile(dir *os.Root, name string) (string, error) {
 }
 
 // metaToSearchValues converts ItemMetadata into individual search_value rows.
-func metaToSearchValues(groupID uuid.UUID, meta api.ItemMetadata) []sqlc.InsertSearchValueParams {
+func metaToSearchValues(groupID pgtype.UUID, meta api.ItemMetadata) []sqlc.InsertSearchValueParams {
 	rows := []sqlc.InsertSearchValueParams{
 		{GroupID: groupID, KeyName: "name", KeyValue: meta.Name},
 		{GroupID: groupID, KeyName: "license", KeyValue: string(meta.License)},
@@ -684,23 +683,14 @@ func metaToSearchValues(groupID uuid.UUID, meta api.ItemMetadata) []sqlc.InsertS
 func buildMetadataParams(ctx context.Context, itemID uuid.UUID) sqlc.InsertItemMetadataParams {
 	addr := clientip.FromContext(ctx)
 	return sqlc.InsertItemMetadataParams{
-		ItemID:    itemID,
-		CreatorIp: addrToInet(addr),
+		ItemID:    uuidToPgtype(itemID),
+		CreatorIp: addr,
 	}
 }
 
-func addrToInet(addr netip.Addr) pqtype.Inet {
-	if !addr.IsValid() {
-		return pqtype.Inet{}
-	}
-	ip := addr.As16()
-	return pqtype.Inet{
-		IPNet: net.IPNet{
-			IP:   net.IP(ip[:]),
-			Mask: net.CIDRMask(128, 128),
-		},
-		Valid: true,
-	}
+// uuidToPgtype converts a google/uuid.UUID to a pgtype.UUID.
+func uuidToPgtype(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // fileExtension returns the storage file extension for the given item type.

@@ -2,6 +2,7 @@ package seedutil
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,57 @@ import (
 	"strings"
 	"time"
 )
+
+// ── rate limiting ────────────────────────────────────────────────────────────
+
+// IsLocalhost reports whether the given base URL points to a loopback address.
+func IsLocalhost(baseURL string) bool {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+// Throttle is a context-aware rate limiter that allows at most N operations per
+// second.  Multiple goroutines may call Wait concurrently; the ticker channel
+// serialises them.
+type Throttle struct {
+	ticker *time.Ticker
+}
+
+// NewThrottle creates a rate limiter allowing rps requests per second.
+// If rps <= 0 it returns a no-op throttle that never blocks.
+func NewThrottle(rps int) *Throttle {
+	if rps <= 0 {
+		return &Throttle{}
+	}
+	return &Throttle{
+		ticker: time.NewTicker(time.Second / time.Duration(rps)),
+	}
+}
+
+// Wait blocks until the next request slot is available or the context is
+// cancelled.  It returns the context error when cancelled.
+func (t *Throttle) Wait(ctx context.Context) error {
+	if t.ticker == nil {
+		return ctx.Err()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.ticker.C:
+		return nil
+	}
+}
+
+// Stop releases resources held by the throttle.
+func (t *Throttle) Stop() {
+	if t.ticker != nil {
+		t.ticker.Stop()
+	}
+}
 
 const userAgent = "teeworlds-asset-db-seeder/1.0"
 

@@ -1,7 +1,6 @@
 package server
 
 import (
-	stdsql "database/sql"
 	"embed"
 	"fmt"
 	"html/template"
@@ -9,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jxsl13/teeworlds-asset-service/config"
 	"github.com/jxsl13/teeworlds-asset-service/http/service"
@@ -41,13 +42,14 @@ type Server struct {
 	rateLimitMaxGroups int
 	rateLimitWindow    time.Duration
 	adminOnlyUpload    bool
+	authEnabled        bool
 	itemsPerPage       int
 	branding           config.Branding
 }
 
-// New creates a Server from a *sql.DB and prepared *sqlc.Queries.
+// New creates a Server from a *pgxpool.Pool.
 // It opens tempUploadPath as a sandboxed os.Root for temporary upload files.
-func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath string, maxStorageSize int64, allowedResolutions map[string][]config.Resolution, maxUploadSizes map[string]int64, thumbnailSizes map[string]config.Resolution, rateLimitMaxGroups int, rateLimitWindow time.Duration, adminOnlyUpload bool, itemsPerPage int, branding config.Branding) (*Server, error) {
+func New(pool *pgxpool.Pool, storagePath string, tempUploadPath string, maxStorageSize int64, allowedResolutions map[string][]config.Resolution, maxUploadSizes map[string]int64, thumbnailSizes map[string]config.Resolution, rateLimitMaxGroups int, rateLimitWindow time.Duration, adminOnlyUpload bool, authEnabled bool, itemsPerPage int, branding config.Branding) (*Server, error) {
 	tmpRoot, err := os.OpenRoot(tempUploadPath)
 	if err != nil {
 		return nil, err
@@ -61,7 +63,7 @@ func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath stri
 		return nil, fmt.Errorf("parse items: %w", err)
 	}
 	return &Server{
-		dao:                sqlc.NewDAO(db, q),
+		dao:                sqlc.NewDAO(pool),
 		fsys:               http.Dir(storagePath),
 		tmpDir:             tmpRoot,
 		maxStorageSize:     maxStorageSize,
@@ -72,6 +74,7 @@ func New(db *stdsql.DB, q *sqlc.Queries, storagePath string, tempUploadPath stri
 		rateLimitMaxGroups: rateLimitMaxGroups,
 		rateLimitWindow:    rateLimitWindow,
 		adminOnlyUpload:    adminOnlyUpload,
+		authEnabled:        authEnabled,
 		itemsPerPage:       itemsPerPage,
 		branding:           branding,
 	}, nil

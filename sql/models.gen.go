@@ -5,13 +5,11 @@
 package sql
 
 import (
-	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	"time"
+	"net/netip"
 
-	"github.com/google/uuid"
-	"github.com/sqlc-dev/pqtype"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AssetTypeEnum string
@@ -91,44 +89,44 @@ func AllAssetTypeEnumValues() []AssetTypeEnum {
 }
 
 type AssetGroup struct {
-	GroupID   uuid.UUID     `db:"group_id"`
+	GroupID   pgtype.UUID   `db:"group_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 	GroupName string        `db:"group_name"`
 	GroupKey  string        `db:"group_key"`
 }
 
 type AssetItem struct {
-	GroupID           uuid.UUID      `db:"group_id"`
-	ItemID            uuid.UUID      `db:"item_id"`
-	GroupValue        string         `db:"group_value"`
-	Size              int64          `db:"size"`
-	Checksum          string         `db:"checksum"`
-	ItemFilePath      string         `db:"item_file_path"`
-	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
-	ThumbnailChecksum string         `db:"thumbnail_checksum"`
-	OriginalFilename  string         `db:"original_filename"`
+	GroupID           pgtype.UUID `db:"group_id"`
+	ItemID            pgtype.UUID `db:"item_id"`
+	GroupValue        string      `db:"group_value"`
+	Size              int64       `db:"size"`
+	Checksum          string      `db:"checksum"`
+	ItemFilePath      string      `db:"item_file_path"`
+	ItemThumbnailPath *string     `db:"item_thumbnail_path"`
+	ThumbnailChecksum string      `db:"thumbnail_checksum"`
+	OriginalFilename  string      `db:"original_filename"`
 }
 
 type AssetItemMetadatum struct {
-	ItemID         uuid.UUID   `db:"item_id"`
-	CreatedAt      time.Time   `db:"created_at"`
-	CreatorIp      pqtype.Inet `db:"creator_ip"`
-	CreatorAgent   string      `db:"creator_agent"`
-	AcceptLanguage string      `db:"accept_language"`
-	Referer        string      `db:"referer"`
-	ContentType    string      `db:"content_type"`
-	RequestID      string      `db:"request_id"`
+	ItemID         pgtype.UUID        `db:"item_id"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at"`
+	CreatorIp      netip.Addr         `db:"creator_ip"`
+	CreatorAgent   string             `db:"creator_agent"`
+	AcceptLanguage string             `db:"accept_language"`
+	Referer        string             `db:"referer"`
+	ContentType    string             `db:"content_type"`
+	RequestID      string             `db:"request_id"`
 }
 
 type SearchValue struct {
-	GroupID  uuid.UUID `db:"group_id"`
-	KeyName  string    `db:"key_name"`
-	KeyValue string    `db:"key_value"`
+	GroupID  pgtype.UUID `db:"group_id"`
+	KeyName  string      `db:"key_name"`
+	KeyValue string      `db:"key_value"`
 }
 
 type SearchValueWeight struct {
-	KeyName string          `db:"key_name"`
-	Weight  sql.NullFloat64 `db:"weight"`
+	KeyName string   `db:"key_name"`
+	Weight  *float32 `db:"weight"`
 }
 
 type StorageStat struct {

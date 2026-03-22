@@ -434,7 +434,7 @@ paths:
                 type: string
                 example: "\"a3f5b2c1d4e6789012345678abcdef01\""
           content:
-            image/png:
+            image/webp:
               schema:
                 type: string
                 format: binary
@@ -499,7 +499,7 @@ paths:
             Content-Type:
               schema:
                 type: string
-                example: "image/png"
+                example: "image/webp"
             Content-Length:
               schema:
                 type: integer

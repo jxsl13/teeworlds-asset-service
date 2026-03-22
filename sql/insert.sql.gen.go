@@ -7,10 +7,9 @@ package sql
 
 import (
 	"context"
-	"database/sql"
+	"net/netip"
 
-	"github.com/google/uuid"
-	"github.com/sqlc-dev/pqtype"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getGroupID = `-- name: GetGroupID :one
@@ -27,9 +26,9 @@ type GetGroupIDParams struct {
 	GroupKey  string        `db:"group_key"`
 }
 
-func (q *Queries) GetGroupID(ctx context.Context, arg GetGroupIDParams) (uuid.UUID, error) {
-	row := q.queryRow(ctx, q.getGroupIDStmt, getGroupID, arg.AssetType, arg.GroupName, arg.GroupKey)
-	var group_id uuid.UUID
+func (q *Queries) GetGroupID(ctx context.Context, arg GetGroupIDParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getGroupID, arg.AssetType, arg.GroupName, arg.GroupKey)
+	var group_id pgtype.UUID
 	err := row.Scan(&group_id)
 	return group_id, err
 }
@@ -41,20 +40,20 @@ WHERE (SELECT total_size FROM storage_stats) + $4 <= $10
 `
 
 type InsertItemParams struct {
-	ItemID            uuid.UUID      `db:"item_id"`
-	GroupID           uuid.UUID      `db:"group_id"`
-	GroupValue        string         `db:"group_value"`
-	Size              int64          `db:"size"`
-	Checksum          string         `db:"checksum"`
-	ItemFilePath      string         `db:"item_file_path"`
-	ThumbnailChecksum string         `db:"thumbnail_checksum"`
-	OriginalFilename  string         `db:"original_filename"`
-	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
-	MaxTotalSize      int64          `db:"max_total_size"`
+	ItemID            pgtype.UUID `db:"item_id"`
+	GroupID           pgtype.UUID `db:"group_id"`
+	GroupValue        string      `db:"group_value"`
+	Size              int64       `db:"size"`
+	Checksum          string      `db:"checksum"`
+	ItemFilePath      string      `db:"item_file_path"`
+	ThumbnailChecksum string      `db:"thumbnail_checksum"`
+	OriginalFilename  string      `db:"original_filename"`
+	ItemThumbnailPath *string     `db:"item_thumbnail_path"`
+	MaxTotalSize      int64       `db:"max_total_size"`
 }
 
 func (q *Queries) InsertItem(ctx context.Context, arg InsertItemParams) (int64, error) {
-	result, err := q.exec(ctx, q.insertItemStmt, insertItem,
+	result, err := q.db.Exec(ctx, insertItem,
 		arg.ItemID,
 		arg.GroupID,
 		arg.GroupValue,
@@ -69,7 +68,7 @@ func (q *Queries) InsertItem(ctx context.Context, arg InsertItemParams) (int64, 
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+	return result.RowsAffected(), nil
 }
 
 const insertItemMetadata = `-- name: InsertItemMetadata :exec
@@ -85,8 +84,8 @@ INSERT INTO asset_item_metadata (
 `
 
 type InsertItemMetadataParams struct {
-	ItemID         uuid.UUID   `db:"item_id"`
-	CreatorIp      pqtype.Inet `db:"creator_ip"`
+	ItemID         pgtype.UUID `db:"item_id"`
+	CreatorIp      netip.Addr  `db:"creator_ip"`
 	CreatorAgent   string      `db:"creator_agent"`
 	AcceptLanguage string      `db:"accept_language"`
 	Referer        string      `db:"referer"`
@@ -95,7 +94,7 @@ type InsertItemMetadataParams struct {
 }
 
 func (q *Queries) InsertItemMetadata(ctx context.Context, arg InsertItemMetadataParams) error {
-	_, err := q.exec(ctx, q.insertItemMetadataStmt, insertItemMetadata,
+	_, err := q.db.Exec(ctx, insertItemMetadata,
 		arg.ItemID,
 		arg.CreatorIp,
 		arg.CreatorAgent,
@@ -114,13 +113,13 @@ ON CONFLICT DO NOTHING
 `
 
 type InsertSearchValueParams struct {
-	GroupID  uuid.UUID `db:"group_id"`
-	KeyName  string    `db:"key_name"`
-	KeyValue string    `db:"key_value"`
+	GroupID  pgtype.UUID `db:"group_id"`
+	KeyName  string      `db:"key_name"`
+	KeyValue string      `db:"key_value"`
 }
 
 func (q *Queries) InsertSearchValue(ctx context.Context, arg InsertSearchValueParams) error {
-	_, err := q.exec(ctx, q.insertSearchValueStmt, insertSearchValue, arg.GroupID, arg.KeyName, arg.KeyValue)
+	_, err := q.db.Exec(ctx, insertSearchValue, arg.GroupID, arg.KeyName, arg.KeyValue)
 	return err
 }
 
@@ -131,14 +130,14 @@ ON CONFLICT (asset_type, group_name, group_key) DO NOTHING
 `
 
 type UpsertGroupParams struct {
-	GroupID   uuid.UUID     `db:"group_id"`
+	GroupID   pgtype.UUID   `db:"group_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 	GroupName string        `db:"group_name"`
 	GroupKey  string        `db:"group_key"`
 }
 
 func (q *Queries) UpsertGroup(ctx context.Context, arg UpsertGroupParams) error {
-	_, err := q.exec(ctx, q.upsertGroupStmt, upsertGroup,
+	_, err := q.db.Exec(ctx, upsertGroup,
 		arg.GroupID,
 		arg.AssetType,
 		arg.GroupName,

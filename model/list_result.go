@@ -38,7 +38,7 @@ func ListResultFromRows(rows []sqlc.ListItemsRow) ListResult {
 	items := make([]ListItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, ListItem{
-			GroupID:   row.GroupID,
+			GroupID:   uuid.UUID(row.GroupID.Bytes),
 			AssetType: row.AssetType,
 			GroupName: row.GroupName,
 			GroupKey:  row.GroupKey,
@@ -46,7 +46,7 @@ func ListResultFromRows(rows []sqlc.ListItemsRow) ListResult {
 			License:   row.License,
 			Variants:  row.Variants,
 			TotalSize: row.TotalSize,
-			CreatedAt: row.CreatedAt,
+			CreatedAt: row.CreatedAt.Time,
 		})
 	}
 	return ListResult{Items: items, Total: total}

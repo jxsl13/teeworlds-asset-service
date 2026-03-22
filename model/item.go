@@ -27,7 +27,7 @@ type Item struct {
 // ItemFromRow converts a sqlc.SearchRow (DB layer) into a domain Item.
 func ItemFromRow(row sqlc.SearchRow) Item {
 	return Item{
-		GroupID:   row.GroupID,
+		GroupID:   uuid.UUID(row.GroupID.Bytes),
 		AssetType: row.AssetType,
 		GroupName: row.GroupName,
 		GroupKey:  row.GroupKey,

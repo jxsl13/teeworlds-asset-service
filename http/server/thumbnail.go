@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	stdsql "database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
 	"github.com/jxsl13/teeworlds-asset-service/http/api"
 	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
@@ -19,30 +20,30 @@ import (
 // Returns ("", "", nil) when no thumbnail exists.
 func (s *Server) resolveThumbnail(ctx context.Context, itemID uuid.UUID, assetType sqlc.AssetTypeEnum) (thumbPath, checksum string, err error) {
 	thumb, err := s.dao.GetItemThumbnailPath(ctx, sqlc.GetItemThumbnailPathParams{
-		ItemID:    itemID,
+		ItemID:    uuidToPgtype(itemID),
 		AssetType: assetType,
 	})
-	if err != nil && !errors.Is(err, stdsql.ErrNoRows) {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", "", fmt.Errorf("get thumbnail path: %w", err)
 	}
 
-	if err == nil && thumb.ItemThumbnailPath.Valid && thumb.ItemThumbnailPath.String != "" {
-		return thumb.ItemThumbnailPath.String, thumb.ThumbnailChecksum, nil
+	if err == nil && thumb.ItemThumbnailPath != nil && *thumb.ItemThumbnailPath != "" {
+		return *thumb.ItemThumbnailPath, thumb.ThumbnailChecksum, nil
 	}
 
 	// Fallback: treat the ID as a group_id.
-	group, err := s.dao.GetGroupThumbnailPath(ctx, itemID)
+	group, err := s.dao.GetGroupThumbnailPath(ctx, uuidToPgtype(itemID))
 	if err != nil {
-		if errors.Is(err, stdsql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", "", nil
 		}
 		return "", "", fmt.Errorf("get group thumbnail path: %w", err)
 	}
 
-	if !group.ItemThumbnailPath.Valid || group.ItemThumbnailPath.String == "" {
+	if group.ItemThumbnailPath == nil || *group.ItemThumbnailPath == "" {
 		return "", "", nil
 	}
-	return group.ItemThumbnailPath.String, group.ThumbnailChecksum, nil
+	return *group.ItemThumbnailPath, group.ThumbnailChecksum, nil
 }
 
 // DownloadThumbnail implements api.StrictServerInterface.
@@ -80,7 +81,7 @@ func (s *Server) DownloadThumbnail(ctx context.Context, request api.DownloadThum
 		return nil, fmt.Errorf("stat thumbnail file: %w", err)
 	}
 
-	return api.DownloadThumbnail200ImagepngResponse{
+	return api.DownloadThumbnail200ImagewebpResponse{
 		Body:          f,
 		ContentLength: stat.Size(),
 		Headers: api.DownloadThumbnail200ResponseHeaders{
@@ -140,7 +141,7 @@ type headThumbnailResponse struct {
 func (r headThumbnailResponse) VisitHeadThumbnailResponse(w http.ResponseWriter) error {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("ETag", r.etag)
-	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Type", "image/webp")
 	w.Header().Set("Content-Length", fmt.Sprint(r.contentLength))
 	w.WriteHeader(http.StatusOK)
 	return nil

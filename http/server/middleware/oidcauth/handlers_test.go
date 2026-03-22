@@ -30,9 +30,9 @@ func testProvider(t *testing.T) *Provider {
 
 func TestLoginHandler_ReturnTo(t *testing.T) {
 	tests := []struct {
-		name        string
-		returnTo    string
-		wantStored  bool   // whether returnTo should be stored in session
+		name         string
+		returnTo     string
+		wantStored   bool   // whether returnTo should be stored in session
 		wantReturnTo string // expected value if stored
 	}{
 		{"relative path", "/skin", true, "/skin"},

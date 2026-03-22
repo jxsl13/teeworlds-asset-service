@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/jxsl13/teeworlds-asset-service/http/api"
 	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
@@ -20,7 +21,7 @@ func (s *Server) DownloadBundle(ctx context.Context, request api.DownloadBundleR
 	itemType := sqlc.AssetTypeEnum(request.AssetType)
 
 	rows, err := s.dao.GetGroupFiles(ctx, sqlc.GetGroupFilesParams{
-		GroupID:   request.ItemId,
+		GroupID:   uuidToPgtype(request.ItemId),
 		AssetType: itemType,
 	})
 	if err != nil {
@@ -98,9 +99,9 @@ func (s *Server) DownloadMultiBundle(ctx context.Context, request api.DownloadMu
 		return api.DownloadMultiBundle400JSONResponse{Error: "selected group_ids must not exceed 100 entries"}, nil
 	}
 
-	groupIDs := make([]uuid.UUID, len(request.Body.GroupIds))
+	groupIDs := make([]pgtype.UUID, len(request.Body.GroupIds))
 	for i, id := range request.Body.GroupIds {
-		groupIDs[i] = uuid.UUID(id)
+		groupIDs[i] = pgtype.UUID{Bytes: id, Valid: true}
 	}
 
 	rows, err := s.dao.GetMultiGroupFiles(ctx, groupIDs)

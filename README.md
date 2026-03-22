@@ -56,12 +56,16 @@ Each variable below can be suffixed with the asset type in uppercase:
 
 ### OIDC / Pocket-ID
 
+When all four variables below are set, OIDC authentication and admin functionality are enabled. When omitted, the service runs in anonymous-only mode with no login link, no admin controls, and no admin API routes.
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `EXTERNAL_URL` | **yes** | — | Publicly reachable base URL of this service (e.g. `https://assets.example.com`); OIDC callback URLs (`/auth/callback`, `/auth/post-logout`) are derived from this |
-| `OIDC_ISSUER_URL` | **yes** | — | Pocket-ID base URL (e.g. `https://id.example.com`) |
-| `OIDC_CLIENT_ID` | **yes** | — | OIDC client ID (from `cmd/provision-pocketid`) |
-| `OIDC_CLIENT_SECRET` | **yes** | — | OIDC client secret (from `cmd/provision-pocketid`) |
+| `EXTERNAL_URL` | when OIDC is set | — | Publicly reachable base URL of this service (e.g. `https://assets.example.com`); OIDC callback URLs (`/auth/callback`, `/auth/post-logout`) are derived from this |
+| `OIDC_ISSUER_URL` | no | — | Pocket-ID base URL (e.g. `https://id.example.com`) |
+| `OIDC_CLIENT_ID` | no | — | OIDC client ID (from `cmd/provision-pocketid`) |
+| `OIDC_CLIENT_SECRET` | no | — | OIDC client secret (from `cmd/provision-pocketid`) |
+
+> **Note:** Setting only some of the three `OIDC_*` variables is a configuration error — set all three or none.
 
 ### Rate Limiting
 

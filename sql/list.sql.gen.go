@@ -7,10 +7,8 @@ package sql
 
 import (
 	"context"
-	"database/sql"
-	"time"
 
-	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const listItems = `-- name: ListItems :many
@@ -161,34 +159,34 @@ LIMIT $2 OFFSET $3
 `
 
 type ListItemsParams struct {
-	AssetType     AssetTypeEnum  `db:"asset_type"`
-	Limit         int32          `db:"limit"`
-	Offset        int32          `db:"offset"`
-	FilterName    sql.NullString `db:"filter_name"`
-	FilterCreator sql.NullString `db:"filter_creator"`
-	FilterLicense sql.NullString `db:"filter_license"`
-	FilterDate    sql.NullString `db:"filter_date"`
-	SortDesc      bool           `db:"sort_desc"`
-	SortField     string         `db:"sort_field"`
-	SortField2    string         `db:"sort_field_2"`
-	SortDesc2     bool           `db:"sort_desc_2"`
+	AssetType     AssetTypeEnum `db:"asset_type"`
+	Limit         int32         `db:"limit"`
+	Offset        int32         `db:"offset"`
+	FilterName    *string       `db:"filter_name"`
+	FilterCreator *string       `db:"filter_creator"`
+	FilterLicense *string       `db:"filter_license"`
+	FilterDate    *string       `db:"filter_date"`
+	SortDesc      bool          `db:"sort_desc"`
+	SortField     string        `db:"sort_field"`
+	SortField2    string        `db:"sort_field_2"`
+	SortDesc2     bool          `db:"sort_desc_2"`
 }
 
 type ListItemsRow struct {
-	GroupID    uuid.UUID     `db:"group_id"`
-	AssetType  AssetTypeEnum `db:"asset_type"`
-	GroupName  string        `db:"group_name"`
-	GroupKey   string        `db:"group_key"`
-	Creators   string        `db:"creators"`
-	License    string        `db:"license"`
-	Variants   string        `db:"variants"`
-	TotalSize  int64         `db:"total_size"`
-	CreatedAt  time.Time     `db:"created_at"`
-	TotalCount int64         `db:"total_count"`
+	GroupID    pgtype.UUID        `db:"group_id"`
+	AssetType  AssetTypeEnum      `db:"asset_type"`
+	GroupName  string             `db:"group_name"`
+	GroupKey   string             `db:"group_key"`
+	Creators   string             `db:"creators"`
+	License    string             `db:"license"`
+	Variants   string             `db:"variants"`
+	TotalSize  int64              `db:"total_size"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at"`
+	TotalCount int64              `db:"total_count"`
 }
 
 func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListItemsRow, error) {
-	rows, err := q.query(ctx, q.listItemsStmt, listItems,
+	rows, err := q.db.Query(ctx, listItems,
 		arg.AssetType,
 		arg.Limit,
 		arg.Offset,
@@ -223,9 +221,6 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

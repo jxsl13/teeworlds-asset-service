@@ -74,10 +74,17 @@ type Config struct {
 	// ExternalURL is the publicly reachable base URL of this service
 	// (e.g. "https://assets.example.com" or "http://localhost:8080").
 	// All OIDC callback URLs are derived from this base URL.
-	// Env: EXTERNAL_URL (required)
+	// Env: EXTERNAL_URL (required when OIDC is enabled)
 	ExternalURL string
 
-	// OIDC / Pocket-ID configuration (required).
+	// OIDCEnabled is true when all three OIDC variables (and EXTERNAL_URL) are set.
+	// When false, authentication, the login link, and all admin functionality are disabled.
+	OIDCEnabled bool
+
+	// OIDC / Pocket-ID configuration (optional).
+	// When all three are set (together with EXTERNAL_URL), OIDC authentication
+	// and admin functionality are enabled. When any is missing, the service
+	// runs in anonymous-only mode with no admin features.
 	// Provision credentials via cmd/provision-pocketid before first start.
 	OIDCIssuerURL    string // Env: OIDC_ISSUER_URL
 	OIDCClientID     string // Env: OIDC_CLIENT_ID
@@ -194,10 +201,6 @@ func Load() (Config, error) {
 		{"DB_PASSWORD", cfg.DBPassword},
 		{"DB_NAME", cfg.DBName},
 		{"STORAGE_PATH", cfg.StoragePath},
-		{"EXTERNAL_URL", cfg.ExternalURL},
-		{"OIDC_ISSUER_URL", cfg.OIDCIssuerURL},
-		{"OIDC_CLIENT_ID", cfg.OIDCClientID},
-		{"OIDC_CLIENT_SECRET", cfg.OIDCClientSecret},
 	} {
 		if kv.val == "" {
 			missing = append(missing, kv.key)
@@ -207,21 +210,59 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("required environment variables not set: %s", strings.Join(missing, ", "))
 	}
 
-	// Validate that EXTERNAL_URL is a proper absolute URL.
-	parsedExternal, err := url.ParseRequestURI(cfg.ExternalURL)
-	if err != nil {
-		return Config{}, fmt.Errorf("EXTERNAL_URL: must be a valid absolute URL (e.g. https://assets.example.com): %w", err)
+	// ── OIDC (optional) ──────────────────────────────────────────────────────
+	// When all three OIDC variables are set, OIDC authentication and admin
+	// routes are enabled. If only some are set, that is a configuration error.
+	oidcVars := map[string]string{
+		"OIDC_ISSUER_URL":    cfg.OIDCIssuerURL,
+		"OIDC_CLIENT_ID":     cfg.OIDCClientID,
+		"OIDC_CLIENT_SECRET": cfg.OIDCClientSecret,
 	}
-	if parsedExternal.Scheme == "" {
-		return Config{}, fmt.Errorf("EXTERNAL_URL: missing URL scheme (expected http or https), got %q", cfg.ExternalURL)
-	}
-	if parsedExternal.Host == "" {
-		return Config{}, fmt.Errorf("EXTERNAL_URL: missing host, got %q", cfg.ExternalURL)
+	var oidcSet, oidcMissing []string
+	for k, v := range oidcVars {
+		if v != "" {
+			oidcSet = append(oidcSet, k)
+		} else {
+			oidcMissing = append(oidcMissing, k)
+		}
 	}
 
-	// Derive OIDC callback URLs from the single external base URL.
-	cfg.OIDCRedirectURL = cfg.ExternalURL + "/auth/callback"
-	cfg.OIDCPostLogoutRedirectURL = cfg.ExternalURL + "/auth/post-logout"
+	switch {
+	case len(oidcSet) == 0:
+		// OIDC fully omitted — anonymous-only mode.
+		cfg.OIDCEnabled = false
+	case len(oidcMissing) > 0:
+		// Partial configuration is an error.
+		return Config{}, fmt.Errorf(
+			"partial OIDC configuration: %s set but %s missing (set all three or none)",
+			strings.Join(oidcSet, ", "), strings.Join(oidcMissing, ", "),
+		)
+	default:
+		cfg.OIDCEnabled = true
+	}
+
+	if cfg.OIDCEnabled {
+		// EXTERNAL_URL is required when OIDC is enabled (callback URLs derive from it).
+		if cfg.ExternalURL == "" {
+			return Config{}, fmt.Errorf("EXTERNAL_URL is required when OIDC is enabled")
+		}
+
+		// Validate that EXTERNAL_URL is a proper absolute URL.
+		parsedExternal, err := url.ParseRequestURI(cfg.ExternalURL)
+		if err != nil {
+			return Config{}, fmt.Errorf("EXTERNAL_URL: must be a valid absolute URL (e.g. https://assets.example.com): %w", err)
+		}
+		if parsedExternal.Scheme == "" {
+			return Config{}, fmt.Errorf("EXTERNAL_URL: missing URL scheme (expected http or https), got %q", cfg.ExternalURL)
+		}
+		if parsedExternal.Host == "" {
+			return Config{}, fmt.Errorf("EXTERNAL_URL: missing host, got %q", cfg.ExternalURL)
+		}
+
+		// Derive OIDC callback URLs from the single external base URL.
+		cfg.OIDCRedirectURL = cfg.ExternalURL + "/auth/callback"
+		cfg.OIDCPostLogoutRedirectURL = cfg.ExternalURL + "/auth/post-logout"
+	}
 
 	if cfg.DBPort == "" {
 		cfg.DBPort = "5432"

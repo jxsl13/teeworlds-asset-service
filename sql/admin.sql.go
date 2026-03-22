@@ -7,19 +7,17 @@ package sql
 
 import (
 	"context"
-	"database/sql"
-	"time"
+	"net/netip"
 
-	"github.com/google/uuid"
-	"github.com/sqlc-dev/pqtype"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countGroupItems = `-- name: CountGroupItems :one
 SELECT COUNT(*) FROM asset_item WHERE group_id = $1
 `
 
-func (q *Queries) CountGroupItems(ctx context.Context, groupID uuid.UUID) (int64, error) {
-	row := q.queryRow(ctx, q.countGroupItemsStmt, countGroupItems, groupID)
+func (q *Queries) CountGroupItems(ctx context.Context, groupID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroupItems, groupID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -40,15 +38,15 @@ WHERE creator_ip = $1
 `
 
 type CountGroupsCreatedByIPParams struct {
-	CreatorIp pqtype.Inet `db:"creator_ip"`
-	Since     time.Time   `db:"since"`
+	CreatorIp netip.Addr         `db:"creator_ip"`
+	Since     pgtype.Timestamptz `db:"since"`
 }
 
 // Returns the number of distinct asset groups first created by the given IP
 // within the given time window. A group is "created by" an IP if that IP
 // uploaded the earliest item in the group.
 func (q *Queries) CountGroupsCreatedByIP(ctx context.Context, arg CountGroupsCreatedByIPParams) (int64, error) {
-	row := q.queryRow(ctx, q.countGroupsCreatedByIPStmt, countGroupsCreatedByIP, arg.CreatorIp, arg.Since)
+	row := q.db.QueryRow(ctx, countGroupsCreatedByIP, arg.CreatorIp, arg.Since)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -61,12 +59,12 @@ AND   asset_type = $2
 `
 
 type DeleteGroupParams struct {
-	GroupID   uuid.UUID     `db:"group_id"`
+	GroupID   pgtype.UUID   `db:"group_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
 func (q *Queries) DeleteGroup(ctx context.Context, arg DeleteGroupParams) error {
-	_, err := q.exec(ctx, q.deleteGroupStmt, deleteGroup, arg.GroupID, arg.AssetType)
+	_, err := q.db.Exec(ctx, deleteGroup, arg.GroupID, arg.AssetType)
 	return err
 }
 
@@ -77,12 +75,12 @@ AND   group_id  = $2
 `
 
 type DeleteItemParams struct {
-	ItemID  uuid.UUID `db:"item_id"`
-	GroupID uuid.UUID `db:"group_id"`
+	ItemID  pgtype.UUID `db:"item_id"`
+	GroupID pgtype.UUID `db:"group_id"`
 }
 
 func (q *Queries) DeleteItem(ctx context.Context, arg DeleteItemParams) error {
-	_, err := q.exec(ctx, q.deleteItemStmt, deleteItem, arg.ItemID, arg.GroupID)
+	_, err := q.db.Exec(ctx, deleteItem, arg.ItemID, arg.GroupID)
 	return err
 }
 
@@ -93,12 +91,12 @@ AND   key_name = $2
 `
 
 type DeleteSearchValuesParams struct {
-	GroupID uuid.UUID `db:"group_id"`
-	KeyName string    `db:"key_name"`
+	GroupID pgtype.UUID `db:"group_id"`
+	KeyName string      `db:"key_name"`
 }
 
 func (q *Queries) DeleteSearchValues(ctx context.Context, arg DeleteSearchValuesParams) error {
-	_, err := q.exec(ctx, q.deleteSearchValuesStmt, deleteSearchValues, arg.GroupID, arg.KeyName)
+	_, err := q.db.Exec(ctx, deleteSearchValues, arg.GroupID, arg.KeyName)
 	return err
 }
 
@@ -110,12 +108,12 @@ AND    ag.asset_type = $2
 `
 
 type GetGroupInfoParams struct {
-	GroupID   uuid.UUID     `db:"group_id"`
+	GroupID   pgtype.UUID   `db:"group_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
 func (q *Queries) GetGroupInfo(ctx context.Context, arg GetGroupInfoParams) (AssetGroup, error) {
-	row := q.queryRow(ctx, q.getGroupInfoStmt, getGroupInfo, arg.GroupID, arg.AssetType)
+	row := q.db.QueryRow(ctx, getGroupInfo, arg.GroupID, arg.AssetType)
 	var i AssetGroup
 	err := row.Scan(
 		&i.GroupID,
@@ -133,12 +131,12 @@ WHERE  ai.group_id = $1
 `
 
 type GetGroupItemPathsRow struct {
-	ItemFilePath      string         `db:"item_file_path"`
-	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
+	ItemFilePath      string  `db:"item_file_path"`
+	ItemThumbnailPath *string `db:"item_thumbnail_path"`
 }
 
-func (q *Queries) GetGroupItemPaths(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemPathsRow, error) {
-	rows, err := q.query(ctx, q.getGroupItemPathsStmt, getGroupItemPaths, groupID)
+func (q *Queries) GetGroupItemPaths(ctx context.Context, groupID pgtype.UUID) ([]GetGroupItemPathsRow, error) {
+	rows, err := q.db.Query(ctx, getGroupItemPaths, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -150,9 +148,6 @@ func (q *Queries) GetGroupItemPaths(ctx context.Context, groupID uuid.UUID) ([]G
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -171,14 +166,14 @@ ORDER  BY ai.group_value
 `
 
 type GetGroupItemsRow struct {
-	ItemID           uuid.UUID `db:"item_id"`
-	GroupValue       string    `db:"group_value"`
-	Size             int64     `db:"size"`
-	OriginalFilename string    `db:"original_filename"`
+	ItemID           pgtype.UUID `db:"item_id"`
+	GroupValue       string      `db:"group_value"`
+	Size             int64       `db:"size"`
+	OriginalFilename string      `db:"original_filename"`
 }
 
-func (q *Queries) GetGroupItems(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemsRow, error) {
-	rows, err := q.query(ctx, q.getGroupItemsStmt, getGroupItems, groupID)
+func (q *Queries) GetGroupItems(ctx context.Context, groupID pgtype.UUID) ([]GetGroupItemsRow, error) {
+	rows, err := q.db.Query(ctx, getGroupItems, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -195,9 +190,6 @@ func (q *Queries) GetGroupItems(ctx context.Context, groupID uuid.UUID) ([]GetGr
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -224,21 +216,21 @@ ORDER  BY ai.group_value
 `
 
 type GetGroupItemsWithMetadataRow struct {
-	ItemID           uuid.UUID `db:"item_id"`
-	GroupValue       string    `db:"group_value"`
-	Size             int64     `db:"size"`
-	OriginalFilename string    `db:"original_filename"`
-	CreatedAt        time.Time `db:"created_at"`
-	CreatorIp        string    `db:"creator_ip"`
-	CreatorAgent     string    `db:"creator_agent"`
-	AcceptLanguage   string    `db:"accept_language"`
-	Referer          string    `db:"referer"`
-	ContentType      string    `db:"content_type"`
-	RequestID        string    `db:"request_id"`
+	ItemID           pgtype.UUID        `db:"item_id"`
+	GroupValue       string             `db:"group_value"`
+	Size             int64              `db:"size"`
+	OriginalFilename string             `db:"original_filename"`
+	CreatedAt        pgtype.Timestamptz `db:"created_at"`
+	CreatorIp        string             `db:"creator_ip"`
+	CreatorAgent     string             `db:"creator_agent"`
+	AcceptLanguage   string             `db:"accept_language"`
+	Referer          string             `db:"referer"`
+	ContentType      string             `db:"content_type"`
+	RequestID        string             `db:"request_id"`
 }
 
-func (q *Queries) GetGroupItemsWithMetadata(ctx context.Context, groupID uuid.UUID) ([]GetGroupItemsWithMetadataRow, error) {
-	rows, err := q.query(ctx, q.getGroupItemsWithMetadataStmt, getGroupItemsWithMetadata, groupID)
+func (q *Queries) GetGroupItemsWithMetadata(ctx context.Context, groupID pgtype.UUID) ([]GetGroupItemsWithMetadataRow, error) {
+	rows, err := q.db.Query(ctx, getGroupItemsWithMetadata, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -263,9 +255,6 @@ func (q *Queries) GetGroupItemsWithMetadata(ctx context.Context, groupID uuid.UU
 		}
 		items = append(items, i)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -280,21 +269,21 @@ AND    ai.group_id = $2
 `
 
 type GetItemInfoParams struct {
-	ItemID  uuid.UUID `db:"item_id"`
-	GroupID uuid.UUID `db:"group_id"`
+	ItemID  pgtype.UUID `db:"item_id"`
+	GroupID pgtype.UUID `db:"group_id"`
 }
 
 type GetItemInfoRow struct {
-	ItemID            uuid.UUID      `db:"item_id"`
-	GroupID           uuid.UUID      `db:"group_id"`
-	GroupValue        string         `db:"group_value"`
-	Size              int64          `db:"size"`
-	ItemFilePath      string         `db:"item_file_path"`
-	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
+	ItemID            pgtype.UUID `db:"item_id"`
+	GroupID           pgtype.UUID `db:"group_id"`
+	GroupValue        string      `db:"group_value"`
+	Size              int64       `db:"size"`
+	ItemFilePath      string      `db:"item_file_path"`
+	ItemThumbnailPath *string     `db:"item_thumbnail_path"`
 }
 
 func (q *Queries) GetItemInfo(ctx context.Context, arg GetItemInfoParams) (GetItemInfoRow, error) {
-	row := q.queryRow(ctx, q.getItemInfoStmt, getItemInfo, arg.ItemID, arg.GroupID)
+	row := q.db.QueryRow(ctx, getItemInfo, arg.ItemID, arg.GroupID)
 	var i GetItemInfoRow
 	err := row.Scan(
 		&i.ItemID,
@@ -316,12 +305,12 @@ AND    asset_type = $3
 
 type UpdateGroupNameParams struct {
 	GroupName string        `db:"group_name"`
-	GroupID   uuid.UUID     `db:"group_id"`
+	GroupID   pgtype.UUID   `db:"group_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
 func (q *Queries) UpdateGroupName(ctx context.Context, arg UpdateGroupNameParams) error {
-	_, err := q.exec(ctx, q.updateGroupNameStmt, updateGroupName, arg.GroupName, arg.GroupID, arg.AssetType)
+	_, err := q.db.Exec(ctx, updateGroupName, arg.GroupName, arg.GroupID, arg.AssetType)
 	return err
 }
 
@@ -338,18 +327,18 @@ AND    group_id = $7
 `
 
 type UpdateItemParams struct {
-	Size              int64          `db:"size"`
-	Checksum          string         `db:"checksum"`
-	ItemFilePath      string         `db:"item_file_path"`
-	ThumbnailChecksum string         `db:"thumbnail_checksum"`
-	OriginalFilename  string         `db:"original_filename"`
-	ItemID            uuid.UUID      `db:"item_id"`
-	GroupID           uuid.UUID      `db:"group_id"`
-	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
+	Size              int64       `db:"size"`
+	Checksum          string      `db:"checksum"`
+	ItemFilePath      string      `db:"item_file_path"`
+	ThumbnailChecksum string      `db:"thumbnail_checksum"`
+	OriginalFilename  string      `db:"original_filename"`
+	ItemID            pgtype.UUID `db:"item_id"`
+	GroupID           pgtype.UUID `db:"group_id"`
+	ItemThumbnailPath *string     `db:"item_thumbnail_path"`
 }
 
 func (q *Queries) UpdateItem(ctx context.Context, arg UpdateItemParams) error {
-	_, err := q.exec(ctx, q.updateItemStmt, updateItem,
+	_, err := q.db.Exec(ctx, updateItem,
 		arg.Size,
 		arg.Checksum,
 		arg.ItemFilePath,

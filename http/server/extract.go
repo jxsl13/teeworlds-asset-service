@@ -3,13 +3,14 @@ package server
 import (
 	"archive/zip"
 	"context"
-	stdsql "database/sql"
 	"errors"
 	"fmt"
 	"image/png"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/jxsl13/teeworlds-asset-service/http/api"
 	"github.com/jxsl13/teeworlds-asset-service/internal/twmap"
@@ -19,21 +20,21 @@ import (
 // ExtractMapImages implements api.StrictServerInterface.
 func (s *Server) ExtractMapImages(ctx context.Context, request api.ExtractMapImagesRequestObject) (api.ExtractMapImagesResponseObject, error) {
 	row, err := s.dao.GetItemFilePath(ctx, sqlc.GetItemFilePathParams{
-		ItemID:    request.ItemId,
+		ItemID:    uuidToPgtype(request.ItemId),
 		AssetType: sqlc.AssetTypeEnumMap,
 	})
-	if err != nil && !errors.Is(err, stdsql.ErrNoRows) {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("get map file path: %w", err)
 	}
 
 	// Fallback: treat the ID as a group_id.
-	if errors.Is(err, stdsql.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		groupRow, groupErr := s.dao.GetGroupFilePath(ctx, sqlc.GetGroupFilePathParams{
-			GroupID:   request.ItemId,
+			GroupID:   uuidToPgtype(request.ItemId),
 			AssetType: sqlc.AssetTypeEnumMap,
 		})
 		if groupErr != nil {
-			if errors.Is(groupErr, stdsql.ErrNoRows) {
+			if errors.Is(groupErr, pgx.ErrNoRows) {
 				return api.ExtractMapImages404JSONResponse{Error: "map not found"}, nil
 			}
 			return nil, fmt.Errorf("get group file path: %w", groupErr)

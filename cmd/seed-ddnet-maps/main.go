@@ -18,11 +18,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/url"
 	"os"
+	"os/signal"
 	"regexp"
 	"strings"
 	"sync"
@@ -77,7 +79,23 @@ func main() {
 	addr := flag.String("addr", "http://localhost:8080", "base URL of the running asset-service")
 	filterType := flag.String("type", "", "filter by map type (e.g. novice, brutal); empty = all")
 	concurrency := flag.Int("concurrency", 8, "number of parallel download/upload workers")
+	rps := flag.Int("rps", 5, "max requests per second (0 = unlimited; auto-disabled for localhost)")
 	flag.Parse()
+
+	// Cancel on SIGINT / SIGTERM for graceful shutdown.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	// Throttle requests when targeting a non-localhost server.
+	effectiveRPS := *rps
+	if seedutil.IsLocalhost(*addr) {
+		effectiveRPS = 0
+	}
+	throttle := seedutil.NewThrottle(effectiveRPS)
+	defer throttle.Stop()
+	if effectiveRPS > 0 {
+		log.Printf("throttling to %d requests/sec (target is not localhost)", effectiveRPS)
+	}
 
 	types := mapTypes
 	if *filterType != "" {
@@ -124,12 +142,18 @@ func main() {
 	var wg sync.WaitGroup
 
 	for _, m := range allMaps {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(m ddnetMap) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			if err := throttle.Wait(ctx); err != nil {
+				return
+			}
 			mapData, err := downloadMap(m.Type, m.Name)
 			if err != nil {
 				log.Printf("FAIL  download  %-40s (%s) %v", m.Name, m.Type, err)
@@ -137,6 +161,9 @@ func main() {
 				return
 			}
 
+			if err := throttle.Wait(ctx); err != nil {
+				return
+			}
 			err = seedutil.UploadAsset(uploadClient, csrfToken, *addr, "map", m.Name, ddnetMapsLicense, m.Creators, m.Name+".map", mapData)
 			if err != nil {
 				if strings.Contains(err.Error(), "409") {
@@ -158,6 +185,10 @@ func main() {
 	ok := okCount.Load()
 	fail := failCount.Load()
 	skip := skipCount.Load()
+	if ctx.Err() != nil {
+		log.Printf("interrupted: %d uploaded, %d skipped, %d failed before shutdown", ok, skip, fail)
+		os.Exit(1)
+	}
 	log.Printf("done: %d uploaded, %d skipped (already exist), %d failed", ok, skip, fail)
 	if fail > 0 {
 		os.Exit(1)

@@ -31,7 +31,7 @@ func (s *Server) AdminDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Collect file paths before deleting DB rows (CASCADE will remove items).
-	paths, err := s.dao.GetGroupItemPaths(ctx, groupID)
+	paths, err := s.dao.GetGroupItemPaths(ctx, uuidToPgtype(groupID))
 	if err != nil {
 		slog.Error("admin: get group item paths", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -39,7 +39,7 @@ func (s *Server) AdminDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.dao.DeleteGroup(ctx, sqlc.DeleteGroupParams{
-		GroupID:   groupID,
+		GroupID:   uuidToPgtype(groupID),
 		AssetType: at,
 	}); err != nil {
 		slog.Error("admin: delete group", "err", err)
@@ -75,22 +75,22 @@ func (s *Server) AdminDeleteVariant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the item info to find the file paths.
-	info, err := s.dao.GetItemInfo(ctx, sqlc.GetItemInfoParams{ItemID: itemID, GroupID: groupID})
+	info, err := s.dao.GetItemInfo(ctx, sqlc.GetItemInfoParams{ItemID: uuidToPgtype(itemID), GroupID: uuidToPgtype(groupID)})
 	if err != nil {
 		http.Error(w, "item not found", http.StatusNotFound)
 		return
 	}
 
-	if err := s.dao.DeleteItem(ctx, sqlc.DeleteItemParams{ItemID: itemID, GroupID: groupID}); err != nil {
+	if err := s.dao.DeleteItem(ctx, sqlc.DeleteItemParams{ItemID: uuidToPgtype(itemID), GroupID: uuidToPgtype(groupID)}); err != nil {
 		slog.Error("admin: delete item", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	// If the group is now empty, delete it too.
-	count, err := s.dao.CountGroupItems(ctx, groupID)
+	count, err := s.dao.CountGroupItems(ctx, uuidToPgtype(groupID))
 	if err == nil && count == 0 {
-		_ = s.dao.DeleteGroup(ctx, sqlc.DeleteGroupParams{GroupID: groupID, AssetType: at})
+		_ = s.dao.DeleteGroup(ctx, sqlc.DeleteGroupParams{GroupID: uuidToPgtype(groupID), AssetType: at})
 	}
 
 	// Best-effort file cleanup.
@@ -131,7 +131,7 @@ func (s *Server) AdminUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the group exists.
-	if _, err := s.dao.GetGroupInfo(ctx, sqlc.GetGroupInfoParams{GroupID: groupID, AssetType: at}); err != nil {
+	if _, err := s.dao.GetGroupInfo(ctx, sqlc.GetGroupInfoParams{GroupID: uuidToPgtype(groupID), AssetType: at}); err != nil {
 		http.Error(w, "group not found", http.StatusNotFound)
 		return
 	}
@@ -144,23 +144,23 @@ func (s *Server) AdminUpdateGroup(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := tx.UpdateGroupName(ctx, sqlc.UpdateGroupNameParams{
 				GroupName: name,
-				GroupID:   groupID,
+				GroupID:   uuidToPgtype(groupID),
 				AssetType: at,
 			}); err != nil {
 				return err
 			}
 			// Update the search_value for "name".
-			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: groupID, KeyName: "name"}); err != nil {
+			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: uuidToPgtype(groupID), KeyName: "name"}); err != nil {
 				return err
 			}
-			if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: groupID, KeyName: "name", KeyValue: name}); err != nil {
+			if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: uuidToPgtype(groupID), KeyName: "name", KeyValue: name}); err != nil {
 				return err
 			}
 		}
 
 		if body.Creators != nil {
 			// Replace creators search values.
-			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: groupID, KeyName: "creators"}); err != nil {
+			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: uuidToPgtype(groupID), KeyName: "creators"}); err != nil {
 				return err
 			}
 			for _, c := range body.Creators {
@@ -168,7 +168,7 @@ func (s *Server) AdminUpdateGroup(w http.ResponseWriter, r *http.Request) {
 				if c == "" {
 					continue
 				}
-				if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: groupID, KeyName: "creators", KeyValue: c}); err != nil {
+				if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: uuidToPgtype(groupID), KeyName: "creators", KeyValue: c}); err != nil {
 					return err
 				}
 			}
@@ -176,11 +176,11 @@ func (s *Server) AdminUpdateGroup(w http.ResponseWriter, r *http.Request) {
 
 		if body.License != nil {
 			license := strings.TrimSpace(*body.License)
-			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: groupID, KeyName: "license"}); err != nil {
+			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: uuidToPgtype(groupID), KeyName: "license"}); err != nil {
 				return err
 			}
 			if license != "" {
-				if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: groupID, KeyName: "license", KeyValue: license}); err != nil {
+				if err := tx.InsertSearchValue(ctx, sqlc.InsertSearchValueParams{GroupID: uuidToPgtype(groupID), KeyName: "license", KeyValue: license}); err != nil {
 					return err
 				}
 			}
@@ -238,7 +238,7 @@ func (s *Server) AdminGetGroupItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.dao.GetGroupItems(ctx, groupID)
+	rows, err := s.dao.GetGroupItems(ctx, uuidToPgtype(groupID))
 	if err != nil {
 		slog.Error("admin: get group items", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -248,7 +248,7 @@ func (s *Server) AdminGetGroupItems(w http.ResponseWriter, r *http.Request) {
 	items := make([]adminGroupItemResponse, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, adminGroupItemResponse{
-			ItemID:           r.ItemID.String(),
+			ItemID:           uuid.UUID(r.ItemID.Bytes).String(),
 			GroupValue:       r.GroupValue,
 			Size:             r.Size,
 			OriginalFilename: r.OriginalFilename,
@@ -268,7 +268,7 @@ func (s *Server) AdminGetGroupItemsMetadata(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	rows, err := s.dao.GetGroupItemsWithMetadata(ctx, groupID)
+	rows, err := s.dao.GetGroupItemsWithMetadata(ctx, uuidToPgtype(groupID))
 	if err != nil {
 		slog.Error("admin: get group items metadata", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -278,11 +278,11 @@ func (s *Server) AdminGetGroupItemsMetadata(w http.ResponseWriter, r *http.Reque
 	items := make([]adminItemMetadataResponse, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, adminItemMetadataResponse{
-			ItemID:           r.ItemID.String(),
+			ItemID:           uuid.UUID(r.ItemID.Bytes).String(),
 			GroupValue:       r.GroupValue,
 			Size:             r.Size,
 			OriginalFilename: r.OriginalFilename,
-			CreatedAt:        r.CreatedAt.Format("2006-01-02 15:04:05"),
+			CreatedAt:        r.CreatedAt.Time.Format("2006-01-02 15:04:05"),
 			CreatorIP:        r.CreatorIp,
 			CreatorAgent:     r.CreatorAgent,
 			AcceptLanguage:   r.AcceptLanguage,
@@ -303,8 +303,8 @@ func (s *Server) removeFiles(paths []sqlc.GetGroupItemPathsRow) {
 		if err := os.Remove(fp); err != nil && !os.IsNotExist(err) {
 			slog.Warn("admin: remove file", "path", fp, "err", err)
 		}
-		if p.ItemThumbnailPath.Valid && p.ItemThumbnailPath.String != "" {
-			tp := filepath.Join(string(s.fsys), p.ItemThumbnailPath.String)
+		if p.ItemThumbnailPath != nil && *p.ItemThumbnailPath != "" {
+			tp := filepath.Join(string(s.fsys), *p.ItemThumbnailPath)
 			if err := os.Remove(tp); err != nil && !os.IsNotExist(err) {
 				slog.Warn("admin: remove thumbnail", "path", tp, "err", err)
 			}

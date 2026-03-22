@@ -9,9 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
 	postgresql "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
@@ -84,32 +83,30 @@ func TestSearch(t *testing.T) {
 	if err := postgresql.Migrate(ctx, pool); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	db := stdlib.OpenDBFromPool(pool)
-	t.Cleanup(func() { _ = db.Close() })
-	if _, err := db.ExecContext(ctx, "TRUNCATE search_value, asset_item, asset_group CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE search_value, asset_item, asset_group CASCADE"); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
-	groupID := uuid.New()
-	itemID := uuid.New()
-	if _, err := db.ExecContext(ctx,
+	groupID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	itemID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+	if _, err := pool.Exec(ctx,
 		"INSERT INTO asset_group (group_id, asset_type, group_name, group_key) VALUES ($1, $2, $3, $4)",
 		groupID, postgresql.AssetTypeEnumMap, "DDNet", "resolution",
 	); err != nil {
 		t.Fatalf("insert asset_group: %v", err)
 	}
-	if _, err := db.ExecContext(ctx,
+	if _, err := pool.Exec(ctx,
 		"INSERT INTO asset_item (item_id, group_id, item_file_path, checksum) VALUES ($1, $2, $3, $4)",
 		itemID, groupID, "/map/test.map", "abc123",
 	); err != nil {
 		t.Fatalf("insert asset_item: %v", err)
 	}
-	if _, err := db.ExecContext(ctx,
+	if _, err := pool.Exec(ctx,
 		"INSERT INTO search_value (group_id, key_name, key_value) VALUES ($1, $2, $3)",
 		groupID, "name", "DDnet",
 	); err != nil {
 		t.Fatalf("insert search_value: %v", err)
 	}
-	q := postgresql.New(db)
+	q := postgresql.New(pool)
 	t.Run("exact match returns item", func(t *testing.T) {
 		results, err := q.Search(ctx, postgresql.SearchParams{
 			StrictWordSimilarity: "DDNet",

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"sync"
 	"sync/atomic"
 
@@ -62,7 +64,23 @@ func main() {
 	addr := flag.String("addr", "http://localhost:8080", "base URL of the running asset-service")
 	skinType := flag.String("type", "", "filter by skin type: normal, community, or empty for all")
 	concurrency := flag.Int("concurrency", 8, "number of parallel download/upload workers")
+	rps := flag.Int("rps", 5, "max requests per second (0 = unlimited; auto-disabled for localhost)")
 	flag.Parse()
+
+	// Cancel on SIGINT / SIGTERM for graceful shutdown.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	// Throttle requests when targeting a non-localhost server.
+	effectiveRPS := *rps
+	if seedutil.IsLocalhost(*addr) {
+		effectiveRPS = 0
+	}
+	throttle := seedutil.NewThrottle(effectiveRPS)
+	defer throttle.Stop()
+	if effectiveRPS > 0 {
+		log.Printf("throttling to %d requests/sec (target is not localhost)", effectiveRPS)
+	}
 
 	log.Printf("fetching skin database from %s", skinsJSONURL)
 	db, err := fetchSkinsDB()
@@ -101,6 +119,9 @@ func main() {
 	var wg sync.WaitGroup
 
 	for _, skin := range skins {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(s ddnetSkin) {
@@ -111,6 +132,9 @@ func main() {
 			creators := seedutil.ParseCreators(s.Creator)
 
 			// Download and upload the standard-resolution skin.
+			if err := throttle.Wait(ctx); err != nil {
+				return
+			}
 			imgURL := skinImageURL(s, false)
 			imgData, err := seedutil.FetchBytes(imgURL, 10<<20)
 			if err != nil {
@@ -119,6 +143,9 @@ func main() {
 				return
 			}
 
+			if err := throttle.Wait(ctx); err != nil {
+				return
+			}
 			err = seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", imgData)
 			if err != nil {
 				log.Printf("FAIL  upload    %-40s %v", s.Name, err)
@@ -133,6 +160,9 @@ func main() {
 			// The server groups uploads by name; the higher resolution
 			// becomes an additional variant of the same item.
 			if s.HD.UHD {
+				if err := throttle.Wait(ctx); err != nil {
+					return
+				}
 				uhdURL := skinImageURL(s, true)
 				uhdData, err := seedutil.FetchBytes(uhdURL, 10<<20)
 				if err != nil {
@@ -141,6 +171,9 @@ func main() {
 					return
 				}
 
+				if err := throttle.Wait(ctx); err != nil {
+					return
+				}
 				err = seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", uhdData)
 				if err != nil {
 					log.Printf("FAIL  upload    %-40s (UHD) %v", s.Name, err)
@@ -158,6 +191,10 @@ func main() {
 
 	ok := okCount.Load()
 	fail := failCount.Load()
+	if ctx.Err() != nil {
+		log.Printf("interrupted: %d uploaded, %d failed before shutdown", ok, fail)
+		os.Exit(1)
+	}
 	log.Printf("done: %d uploaded, %d failed", ok, fail)
 	if fail > 0 {
 		os.Exit(1)

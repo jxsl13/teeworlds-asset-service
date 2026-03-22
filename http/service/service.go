@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	stdsql "database/sql"
 
 	"github.com/jxsl13/teeworlds-asset-service/model"
 	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
@@ -58,10 +57,10 @@ func (s *SearchService) ListItems(ctx context.Context, query model.ListQuery) (m
 		AssetType:     sqlc.AssetTypeEnum(query.ItemType),
 		Limit:         int32(query.Limit),
 		Offset:        int32(query.Offset),
-		FilterName:    toNullString(query.FilterName),
-		FilterCreator: toNullString(query.FilterCreator),
-		FilterLicense: toNullString(query.FilterLicense),
-		FilterDate:    toNullString(query.FilterDate),
+		FilterName:    query.FilterName,
+		FilterCreator: query.FilterCreator,
+		FilterLicense: query.FilterLicense,
+		FilterDate:    query.FilterDate,
 		SortField:     primary.Field,
 		SortDesc:      primary.Desc,
 		SortField2:    secondary.Field,
@@ -71,11 +70,4 @@ func (s *SearchService) ListItems(ctx context.Context, query model.ListQuery) (m
 		return model.ListResult{}, err
 	}
 	return model.ListResultFromRows(rows), nil
-}
-
-func toNullString(s *string) stdsql.NullString {
-	if s == nil {
-		return stdsql.NullString{}
-	}
-	return stdsql.NullString{String: *s, Valid: true}
 }

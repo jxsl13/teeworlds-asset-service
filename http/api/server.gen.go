@@ -1296,14 +1296,14 @@ type DownloadThumbnail200ResponseHeaders struct {
 	ETag         string
 }
 
-type DownloadThumbnail200ImagepngResponse struct {
+type DownloadThumbnail200ImagewebpResponse struct {
 	Body          io.Reader
 	Headers       DownloadThumbnail200ResponseHeaders
 	ContentLength int64
 }
 
-func (response DownloadThumbnail200ImagepngResponse) VisitDownloadThumbnailResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "image/png")
+func (response DownloadThumbnail200ImagewebpResponse) VisitDownloadThumbnailResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "image/webp")
 	if response.ContentLength != 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
 	}

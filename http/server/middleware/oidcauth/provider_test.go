@@ -123,11 +123,11 @@ func discoveryDoc(w http.ResponseWriter, r *http.Request) map[string]interface{}
 	issuer := scheme + "://" + r.Host
 
 	return map[string]interface{}{
-		"issuer":                 issuer,
-		"authorization_endpoint": issuer + "/authorize",
-		"token_endpoint":         issuer + "/token",
-		"userinfo_endpoint":      issuer + "/userinfo",
-		"jwks_uri":               issuer + "/.well-known/jwks.json",
+		"issuer":                                issuer,
+		"authorization_endpoint":                issuer + "/authorize",
+		"token_endpoint":                        issuer + "/token",
+		"userinfo_endpoint":                     issuer + "/userinfo",
+		"jwks_uri":                              issuer + "/.well-known/jwks.json",
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"subject_types_supported":               []string{"public"},
 		"response_types_supported":              []string{"code"},

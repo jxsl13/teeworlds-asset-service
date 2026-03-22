@@ -22,7 +22,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/jxsl13/teeworlds-asset-service/config"
 	"github.com/jxsl13/teeworlds-asset-service/http/api"
@@ -87,19 +86,12 @@ func setupServerWithRateLimit(t *testing.T, maxGroups int, window time.Duration)
 	if err := sqlpkg.Migrate(ctx, pool); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	db := stdlib.OpenDBFromPool(pool)
-	t.Cleanup(func() { _ = db.Close() })
 
-	if _, err := db.ExecContext(ctx, "TRUNCATE search_value, search_value_weight, asset_item_metadata, asset_item, asset_group CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE search_value, search_value_weight, asset_item_metadata, asset_item, asset_group CASCADE"); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, "UPDATE storage_stats SET total_size = 0"); err != nil {
+	if _, err := pool.Exec(ctx, "UPDATE storage_stats SET total_size = 0"); err != nil {
 		t.Fatalf("reset storage_stats: %v", err)
-	}
-
-	queries, err := sqlpkg.Prepare(ctx, db)
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
 	}
 
 	storagePath := t.TempDir()
@@ -118,7 +110,7 @@ func setupServerWithRateLimit(t *testing.T, maxGroups int, window time.Duration)
 	}
 	maxUploadSizes["map"] = 64 << 20
 
-	srv, err := httpserver.New(db, queries, storagePath, tempUploadPath, 1<<30, resolutions, maxUploadSizes, thumbnails, maxGroups, window, false, 100, config.Branding{SiteTitle: "Test"})
+	srv, err := httpserver.New(pool, storagePath, tempUploadPath, 1<<30, resolutions, maxUploadSizes, thumbnails, maxGroups, window, false, false, 100, config.Branding{SiteTitle: "Test"})
 	if err != nil {
 		t.Fatalf("New server: %v", err)
 	}
@@ -142,21 +134,14 @@ func setupServerWithStorageLimit(t *testing.T, maxStorageSize int64) *httptest.S
 	if err := sqlpkg.Migrate(ctx, pool); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	db := stdlib.OpenDBFromPool(pool)
-	t.Cleanup(func() { _ = db.Close() })
 
 	// Truncate all asset tables for test isolation.
 	// TRUNCATE doesn't fire row-level triggers, so storage_stats must be reset manually.
-	if _, err := db.ExecContext(ctx, "TRUNCATE search_value, search_value_weight, asset_item_metadata, asset_item, asset_group CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE search_value, search_value_weight, asset_item_metadata, asset_item, asset_group CASCADE"); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, "UPDATE storage_stats SET total_size = 0"); err != nil {
+	if _, err := pool.Exec(ctx, "UPDATE storage_stats SET total_size = 0"); err != nil {
 		t.Fatalf("reset storage_stats: %v", err)
-	}
-
-	queries, err := sqlpkg.Prepare(ctx, db)
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
 	}
 
 	storagePath := t.TempDir()
@@ -177,7 +162,7 @@ func setupServerWithStorageLimit(t *testing.T, maxStorageSize int64) *httptest.S
 	}
 	maxUploadSizes["map"] = 64 << 20
 
-	srv, err := httpserver.New(db, queries, storagePath, tempUploadPath, maxStorageSize, resolutions, maxUploadSizes, thumbnails, 0, 0, false, 100, config.Branding{SiteTitle: "Test"})
+	srv, err := httpserver.New(pool, storagePath, tempUploadPath, maxStorageSize, resolutions, maxUploadSizes, thumbnails, 0, 0, false, false, 100, config.Branding{SiteTitle: "Test"})
 	if err != nil {
 		t.Fatalf("New server: %v", err)
 	}

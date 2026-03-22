@@ -7,9 +7,8 @@ package sql
 
 import (
 	"context"
-	"time"
 
-	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const search = `-- name: Search :many
@@ -64,7 +63,7 @@ type SearchParams struct {
 }
 
 type SearchRow struct {
-	GroupID    uuid.UUID     `db:"group_id"`
+	GroupID    pgtype.UUID   `db:"group_id"`
 	AssetType  AssetTypeEnum `db:"asset_type"`
 	GroupName  string        `db:"group_name"`
 	GroupKey   string        `db:"group_key"`
@@ -76,7 +75,7 @@ type SearchRow struct {
 }
 
 func (q *Queries) Search(ctx context.Context, arg SearchParams) ([]SearchRow, error) {
-	rows, err := q.query(ctx, q.searchStmt, search, arg.StrictWordSimilarity, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, search, arg.StrictWordSimilarity, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +97,6 @@ func (q *Queries) Search(ctx context.Context, arg SearchParams) ([]SearchRow, er
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -210,21 +206,21 @@ type SearchByTypeParams struct {
 }
 
 type SearchByTypeRow struct {
-	GroupID    uuid.UUID     `db:"group_id"`
-	AssetType  AssetTypeEnum `db:"asset_type"`
-	GroupName  string        `db:"group_name"`
-	GroupKey   string        `db:"group_key"`
-	Creators   string        `db:"creators"`
-	License    string        `db:"license"`
-	Variants   string        `db:"variants"`
-	TotalSize  int64         `db:"total_size"`
-	CreatedAt  time.Time     `db:"created_at"`
-	Sml        float64       `db:"sml"`
-	TotalCount int64         `db:"total_count"`
+	GroupID    pgtype.UUID        `db:"group_id"`
+	AssetType  AssetTypeEnum      `db:"asset_type"`
+	GroupName  string             `db:"group_name"`
+	GroupKey   string             `db:"group_key"`
+	Creators   string             `db:"creators"`
+	License    string             `db:"license"`
+	Variants   string             `db:"variants"`
+	TotalSize  int64              `db:"total_size"`
+	CreatedAt  pgtype.Timestamptz `db:"created_at"`
+	Sml        float64            `db:"sml"`
+	TotalCount int64              `db:"total_count"`
 }
 
 func (q *Queries) SearchByType(ctx context.Context, arg SearchByTypeParams) ([]SearchByTypeRow, error) {
-	rows, err := q.query(ctx, q.searchByTypeStmt, searchByType,
+	rows, err := q.db.Query(ctx, searchByType,
 		arg.StrictWordSimilarity,
 		arg.Limit,
 		arg.Offset,
@@ -255,9 +251,6 @@ func (q *Queries) SearchByType(ctx context.Context, arg SearchByTypeParams) ([]S
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

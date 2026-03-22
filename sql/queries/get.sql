@@ -52,5 +52,5 @@ SELECT ag.asset_type,
        ai.original_filename
 FROM   asset_item ai
 JOIN   asset_group ag ON ai.group_id = ag.group_id
-WHERE  ai.group_id = ANY($1::uuid[])
+WHERE  ai.group_id = ANY(sqlc.slice(group_ids)::uuid[])
 ORDER BY ag.asset_type, ag.group_name, ai.size ASC;

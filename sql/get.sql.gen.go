@@ -7,10 +7,8 @@ package sql
 
 import (
 	"context"
-	"database/sql"
 
-	"github.com/google/uuid"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getGroupFilePath = `-- name: GetGroupFilePath :one
@@ -24,7 +22,7 @@ LIMIT 1
 `
 
 type GetGroupFilePathParams struct {
-	GroupID   uuid.UUID     `db:"group_id"`
+	GroupID   pgtype.UUID   `db:"group_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
@@ -34,7 +32,7 @@ type GetGroupFilePathRow struct {
 }
 
 func (q *Queries) GetGroupFilePath(ctx context.Context, arg GetGroupFilePathParams) (GetGroupFilePathRow, error) {
-	row := q.queryRow(ctx, q.getGroupFilePathStmt, getGroupFilePath, arg.GroupID, arg.AssetType)
+	row := q.db.QueryRow(ctx, getGroupFilePath, arg.GroupID, arg.AssetType)
 	var i GetGroupFilePathRow
 	err := row.Scan(&i.ItemFilePath, &i.OriginalFilename)
 	return i, err
@@ -50,7 +48,7 @@ ORDER BY ai.size ASC
 `
 
 type GetGroupFilesParams struct {
-	GroupID   uuid.UUID     `db:"group_id"`
+	GroupID   pgtype.UUID   `db:"group_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
@@ -62,7 +60,7 @@ type GetGroupFilesRow struct {
 }
 
 func (q *Queries) GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([]GetGroupFilesRow, error) {
-	rows, err := q.query(ctx, q.getGroupFilesStmt, getGroupFiles, arg.GroupID, arg.AssetType)
+	rows, err := q.db.Query(ctx, getGroupFiles, arg.GroupID, arg.AssetType)
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +78,6 @@ func (q *Queries) GetGroupFiles(ctx context.Context, arg GetGroupFilesParams) ([
 		}
 		items = append(items, i)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -99,12 +94,12 @@ LIMIT 1
 `
 
 type GetGroupThumbnailPathRow struct {
-	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
-	ThumbnailChecksum string         `db:"thumbnail_checksum"`
+	ItemThumbnailPath *string `db:"item_thumbnail_path"`
+	ThumbnailChecksum string  `db:"thumbnail_checksum"`
 }
 
-func (q *Queries) GetGroupThumbnailPath(ctx context.Context, groupID uuid.UUID) (GetGroupThumbnailPathRow, error) {
-	row := q.queryRow(ctx, q.getGroupThumbnailPathStmt, getGroupThumbnailPath, groupID)
+func (q *Queries) GetGroupThumbnailPath(ctx context.Context, groupID pgtype.UUID) (GetGroupThumbnailPathRow, error) {
+	row := q.db.QueryRow(ctx, getGroupThumbnailPath, groupID)
 	var i GetGroupThumbnailPathRow
 	err := row.Scan(&i.ItemThumbnailPath, &i.ThumbnailChecksum)
 	return i, err
@@ -118,15 +113,15 @@ WHERE  ai.checksum = $1
 `
 
 type GetItemByChecksumRow struct {
-	ItemID     uuid.UUID     `db:"item_id"`
-	GroupID    uuid.UUID     `db:"group_id"`
+	ItemID     pgtype.UUID   `db:"item_id"`
+	GroupID    pgtype.UUID   `db:"group_id"`
 	AssetType  AssetTypeEnum `db:"asset_type"`
 	GroupName  string        `db:"group_name"`
 	GroupValue string        `db:"group_value"`
 }
 
 func (q *Queries) GetItemByChecksum(ctx context.Context, checksum string) (GetItemByChecksumRow, error) {
-	row := q.queryRow(ctx, q.getItemByChecksumStmt, getItemByChecksum, checksum)
+	row := q.db.QueryRow(ctx, getItemByChecksum, checksum)
 	var i GetItemByChecksumRow
 	err := row.Scan(
 		&i.ItemID,
@@ -147,7 +142,7 @@ AND    ag.asset_type  = $2
 `
 
 type GetItemFilePathParams struct {
-	ItemID    uuid.UUID     `db:"item_id"`
+	ItemID    pgtype.UUID   `db:"item_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
@@ -157,7 +152,7 @@ type GetItemFilePathRow struct {
 }
 
 func (q *Queries) GetItemFilePath(ctx context.Context, arg GetItemFilePathParams) (GetItemFilePathRow, error) {
-	row := q.queryRow(ctx, q.getItemFilePathStmt, getItemFilePath, arg.ItemID, arg.AssetType)
+	row := q.db.QueryRow(ctx, getItemFilePath, arg.ItemID, arg.AssetType)
 	var i GetItemFilePathRow
 	err := row.Scan(&i.ItemFilePath, &i.OriginalFilename)
 	return i, err
@@ -173,17 +168,17 @@ AND    ai.item_thumbnail_path IS NOT NULL
 `
 
 type GetItemThumbnailPathParams struct {
-	ItemID    uuid.UUID     `db:"item_id"`
+	ItemID    pgtype.UUID   `db:"item_id"`
 	AssetType AssetTypeEnum `db:"asset_type"`
 }
 
 type GetItemThumbnailPathRow struct {
-	ItemThumbnailPath sql.NullString `db:"item_thumbnail_path"`
-	ThumbnailChecksum string         `db:"thumbnail_checksum"`
+	ItemThumbnailPath *string `db:"item_thumbnail_path"`
+	ThumbnailChecksum string  `db:"thumbnail_checksum"`
 }
 
 func (q *Queries) GetItemThumbnailPath(ctx context.Context, arg GetItemThumbnailPathParams) (GetItemThumbnailPathRow, error) {
-	row := q.queryRow(ctx, q.getItemThumbnailPathStmt, getItemThumbnailPath, arg.ItemID, arg.AssetType)
+	row := q.db.QueryRow(ctx, getItemThumbnailPath, arg.ItemID, arg.AssetType)
 	var i GetItemThumbnailPathRow
 	err := row.Scan(&i.ItemThumbnailPath, &i.ThumbnailChecksum)
 	return i, err
@@ -209,8 +204,8 @@ type GetMultiGroupFilesRow struct {
 	OriginalFilename string        `db:"original_filename"`
 }
 
-func (q *Queries) GetMultiGroupFiles(ctx context.Context, dollar_1 []uuid.UUID) ([]GetMultiGroupFilesRow, error) {
-	rows, err := q.query(ctx, q.getMultiGroupFilesStmt, getMultiGroupFiles, pq.Array(dollar_1))
+func (q *Queries) GetMultiGroupFiles(ctx context.Context, groupIds []pgtype.UUID) ([]GetMultiGroupFilesRow, error) {
+	rows, err := q.db.Query(ctx, getMultiGroupFiles, groupIds)
 	if err != nil {
 		return nil, err
 	}
@@ -228,9 +223,6 @@ func (q *Queries) GetMultiGroupFiles(ctx context.Context, dollar_1 []uuid.UUID) 
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

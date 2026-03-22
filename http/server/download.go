@@ -2,12 +2,13 @@ package server
 
 import (
 	"context"
-	stdsql "database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/jxsl13/teeworlds-asset-service/http/api"
 	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
@@ -20,21 +21,21 @@ func (s *Server) DownloadItem(ctx context.Context, request api.DownloadItemReque
 	itemType := sqlc.AssetTypeEnum(request.AssetType)
 
 	row, err := s.dao.GetItemFilePath(ctx, sqlc.GetItemFilePathParams{
-		ItemID:    request.ItemId,
+		ItemID:    uuidToPgtype(request.ItemId),
 		AssetType: itemType,
 	})
-	if err != nil && !errors.Is(err, stdsql.ErrNoRows) {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("get item file path: %w", err)
 	}
 
 	// Fallback: treat the ID as a group_id.
-	if errors.Is(err, stdsql.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		groupRow, groupErr := s.dao.GetGroupFilePath(ctx, sqlc.GetGroupFilePathParams{
-			GroupID:   request.ItemId,
+			GroupID:   uuidToPgtype(request.ItemId),
 			AssetType: itemType,
 		})
 		if groupErr != nil {
-			if errors.Is(groupErr, stdsql.ErrNoRows) {
+			if errors.Is(groupErr, pgx.ErrNoRows) {
 				return api.DownloadItem404JSONResponse{Error: "item not found"}, nil
 			}
 			return nil, fmt.Errorf("get group file path: %w", groupErr)
