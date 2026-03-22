@@ -39,7 +39,7 @@ seed-ddnet-maps:
 # instance and writes the OIDC_CLIENT_ID / OIDC_CLIENT_SECRET into docker/dev.env.
 # Run this once after 'make db-up' and before starting the server.
 pocketid-provision:
-	set -a && . docker/dev.env && set +a && go run ./cmd/provision-pocketid -env-file docker/dev.env
+	go run ./cmd/provision-pocketid -env-file docker/dev.env
 
 generate:
 	go generate ./...

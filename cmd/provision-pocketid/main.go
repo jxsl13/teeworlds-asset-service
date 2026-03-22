@@ -22,18 +22,27 @@ func main() {
 }
 
 func run() error {
-	envFile := flag.String("env-file", "", "path to env file to update with OIDC_CLIENT_ID and OIDC_CLIENT_SECRET")
+	envFile := flag.String("env-file", "", "path to .env file (required — reads config from it and writes OIDC_CLIENT_ID and OIDC_CLIENT_SECRET back)")
 	flag.Parse()
+
+	if *envFile == "" {
+		return fmt.Errorf("flag -env-file is required (e.g. -env-file docker/dev.env)")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	get := func(key string) string { return strings.TrimSpace(os.Getenv(key)) }
+	env, err := readEnvFile(*envFile)
+	if err != nil {
+		return fmt.Errorf("read env file: %w", err)
+	}
+
+	get := func(key string) string { return strings.TrimSpace(env[key]) }
 	must := func(key string) (string, error) {
 		if v := get(key); v != "" {
 			return v, nil
 		}
-		return "", fmt.Errorf("required environment variable %s is not set", key)
+		return "", fmt.Errorf("required key %s is not set in %s", key, *envFile)
 	}
 
 	issuerURL, err := must("OIDC_ISSUER_URL")
@@ -86,7 +95,7 @@ func run() error {
 		fmt.Println()
 		fmt.Println("=== Pocket-ID Provisioning Complete ===")
 		fmt.Println()
-		fmt.Println("Add the following to docker/dev.env:")
+		fmt.Printf("Add the following to %s:\n", *envFile)
 		fmt.Println()
 		fmt.Printf("  OIDC_CLIENT_ID=%s\n", result.ClientID)
 		fmt.Printf("  OIDC_CLIENT_SECRET=%s\n", result.Secret)
@@ -101,6 +110,31 @@ func run() error {
 	fmt.Println()
 
 	return nil
+}
+
+// readEnvFile parses a KEY=VALUE env file (comments and blank lines are ignored)
+// and returns a map of all key/value pairs.
+func readEnvFile(path string) (map[string]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	env := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		env[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return env, scanner.Err()
 }
 
 // updateEnvFile replaces OIDC_CLIENT_ID and OIDC_CLIENT_SECRET values in the
