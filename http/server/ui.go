@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jxsl13/asset-service/http/api"
-	"github.com/jxsl13/asset-service/http/server/middleware/htmx"
-	"github.com/jxsl13/asset-service/http/server/middleware/oidcauth"
-	"github.com/jxsl13/asset-service/model"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/htmx"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/oidcauth"
+	"github.com/jxsl13/teeworlds-asset-service/model"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // RenderUI implements api.StrictServerInterface.
@@ -42,6 +42,7 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 		"SiteSubtitle":   s.branding.SiteSubtitle,
 		"HasHeaderImage": s.branding.HeaderImagePath != "",
 		"HasFavicon":     s.branding.FaviconPath != "",
+		"SourceURL":      s.branding.SourceURL,
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}
@@ -266,6 +267,7 @@ func (s *Server) renderFullPage(ctx context.Context, activeType, query, contentU
 		"SiteSubtitle":   s.branding.SiteSubtitle,
 		"HasHeaderImage": s.branding.HeaderImagePath != "",
 		"HasFavicon":     s.branding.FaviconPath != "",
+		"SourceURL":      s.branding.SourceURL,
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}

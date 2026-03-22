@@ -10,9 +10,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/jxsl13/asset-service/config"
-	"github.com/jxsl13/asset-service/http/service"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/config"
+	"github.com/jxsl13/teeworlds-asset-service/http/service"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 //go:embed static

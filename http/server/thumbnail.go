@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jxsl13/asset-service/http/api"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // DownloadThumbnail implements api.StrictServerInterface.

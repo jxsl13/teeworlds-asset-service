@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
 )
 
 // uploadHud handles HUD sprite sheet uploads.

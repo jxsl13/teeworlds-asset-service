@@ -6,4 +6,6 @@ __debug_bin*
 /asset-service
 /seed-ddnet-skins
 /provision-pocketid
-
+/seed-ddnet-maps
+/check-external
+/update-tilesets

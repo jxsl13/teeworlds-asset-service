@@ -1,4 +1,4 @@
-module github.com/jxsl13/asset-service
+module github.com/jxsl13/teeworlds-asset-service
 
 go 1.25.2
 

@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jxsl13/asset-service/config"
-	"github.com/jxsl13/asset-service/http/api"
-	"github.com/jxsl13/asset-service/internal/twmap"
+	"github.com/jxsl13/teeworlds-asset-service/config"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	"github.com/jxsl13/teeworlds-asset-service/internal/twmap"
 )
 
 // ItemTypeConfig holds the validation constraints for a single item type.

@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jxsl13/asset-service/http/api"
-	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
-	"github.com/jxsl13/asset-service/internal/twmap"
-	"github.com/jxsl13/asset-service/internal/twskin"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/clientip"
+	"github.com/jxsl13/teeworlds-asset-service/internal/twmap"
+	"github.com/jxsl13/teeworlds-asset-service/internal/twskin"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 	"github.com/sqlc-dev/pqtype"
 	"golang.org/x/image/draw"
 )

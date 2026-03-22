@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jxsl13/asset-service/http/api"
-	"github.com/jxsl13/asset-service/model"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	"github.com/jxsl13/teeworlds-asset-service/model"
 )
 
 // ListItems implements api.StrictServerInterface.

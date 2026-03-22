@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/jxsl13/asset-service/http/api"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
 )
 
 // htmxHeaders collects HTMX response headers to be written before the

@@ -11,9 +11,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jxsl13/asset-service/http/api"
-	"github.com/jxsl13/asset-service/internal/twmap"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	"github.com/jxsl13/teeworlds-asset-service/internal/twmap"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // ExtractMapImages implements api.StrictServerInterface.

@@ -1,5 +1,5 @@
 
-.PHONY: generate build db-reset db-up db-down test seed seed-ddnet-skins pocketid-provision
+.PHONY: generate build db-reset db-up db-down test seed seed-ddnet-skins seed-ddnet-maps pocketid-provision update-tilesets
 
 DOCKER_COMPOSE = docker compose -f docker/docker-compose.yaml --env-file docker/dev.env
 
@@ -31,6 +31,10 @@ test:
 seed-ddnet-skins:
 	go run ./cmd/seed-ddnet-skins
 
+# seed-ddnet-maps fetches maps from the DDNet map repository and uploads them.
+seed-ddnet-maps:
+	go run ./cmd/seed-ddnet-maps
+
 # pocketid-provision creates the OIDC client + admin user on the local Pocket-ID
 # instance and writes the OIDC_CLIENT_ID / OIDC_CLIENT_SECRET into docker/dev.env.
 # Run this once after 'make db-up' and before starting the server.
@@ -39,3 +43,8 @@ pocketid-provision:
 
 generate:
 	go generate ./...
+
+# update-tilesets downloads the latest DDNet external tilesets and license
+# into internal/twmap/mapres/ for embedding into the map renderer.
+update-tilesets:
+	go run ./cmd/update-tilesets -dest internal/twmap/mapres

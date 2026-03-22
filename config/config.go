@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -148,6 +149,20 @@ type Branding struct {
 	// The file is served statically at /branding/favicon.
 	// Env: BRANDING_FAVICON_PATH (default: empty — browser default)
 	FaviconPath string
+
+	// SourceURL is the HTTPS URL to the project source repository,
+	// derived automatically from the Go module path at build time.
+	SourceURL string
+}
+
+// envBool returns true when the environment variable is set to "true"
+// (case-insensitive, ignoring surrounding whitespace and inline # comments).
+func envBool(key string) bool {
+	v := os.Getenv(key)
+	if i := strings.Index(v, "#"); i >= 0 {
+		v = v[:i]
+	}
+	return strings.EqualFold(strings.TrimSpace(v), "true")
 }
 
 // Load reads configuration from environment variables, validates required
@@ -168,8 +183,8 @@ func Load() (Config, error) {
 		OIDCIssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
 		OIDCClientID:     os.Getenv("OIDC_CLIENT_ID"),
 		OIDCClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
-		Insecure:         os.Getenv("INSECURE") == "true",
-		AdminOnlyUpload:  os.Getenv("ADMIN_ONLY_UPLOAD") == "true",
+		Insecure:         envBool("INSECURE"),
+		AdminOnlyUpload:  envBool("ADMIN_ONLY_UPLOAD"),
 	}
 
 	var missing []string
@@ -300,6 +315,9 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("BRANDING_FAVICON_PATH: %w", err)
 		}
 		cfg.Branding.FaviconPath = v
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Path != "" {
+		cfg.Branding.SourceURL = "https://" + bi.Main.Path
 	}
 
 	const defaultMaxStorageSize = 1 * 1024 * 1024 * 1024 // 1 GiB

@@ -4,8 +4,8 @@ import (
 	"context"
 	stdsql "database/sql"
 
-	"github.com/jxsl13/asset-service/model"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/model"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // SearchService encapsulates the search business logic.

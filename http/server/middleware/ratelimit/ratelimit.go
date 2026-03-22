@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/clientip"
 )
 
 // ipBucket is a token-bucket state for a single client IP.

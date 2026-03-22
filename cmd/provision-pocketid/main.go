@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/jxsl13/asset-service/cmd/provision-pocketid/pocketid"
+	"github.com/jxsl13/teeworlds-asset-service/cmd/provision-pocketid/pocketid"
 )
 
 func main() {

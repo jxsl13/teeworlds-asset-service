@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	sqlc "github.com/jxsl13/asset-service/sql"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // AdminDeleteGroup deletes an entire asset group and its files.

@@ -38,6 +38,9 @@ func Render(r io.Reader, maxWidth, maxHeight int) (*image.NRGBA, error) {
 	return RenderMap(m, maxWidth, maxHeight)
 }
 
+// pixelsPerTile is the number of game-pixels per tile in the DDNet coordinate system.
+const pixelsPerTile = 32
+
 // renderLayer is a collected tile layer ready for rendering.
 type renderLayer struct {
 	color   color.NRGBA
@@ -45,12 +48,16 @@ type renderLayer struct {
 	tiles   []Tile
 	width   int
 	height  int
+	offsetX int // group offset in tiles (offsetX / pixelsPerTile)
+	offsetY int // group offset in tiles (offsetY / pixelsPerTile)
 }
 
 // renderQuadLayer is a collected quad layer ready for rendering.
 type renderQuadLayer struct {
 	quads   []Quad
-	imageID int // -1 = no image (vertex colors only)
+	imageID int     // -1 = no image (vertex colors only)
+	offsetX float64 // group offset in tiles (float for sub-tile precision)
+	offsetY float64 // group offset in tiles
 }
 
 // renderStep represents an ordered rendering operation (either tile or quad layer).
@@ -92,8 +99,8 @@ func RenderMap(m *Map, maxWidth, maxHeight int) (*image.NRGBA, error) {
 	quadImages := prepareQuadImages(m, steps)
 
 	// ── 5. Render all layers onto intermediate image ─────────────────────
-	imgW := cropW * tileLen
-	imgH := cropH * tileLen
+	imgW := uint32(cropW) * tileLen
+	imgH := uint32(cropH) * tileLen
 	canvas := image.NewNRGBA(image.Rect(0, 0, int(imgW), int(imgH)))
 	fillCheckerboard(canvas, tileLen)
 	renderAllSteps(canvas, steps, tilesets, quadImages, &crop, tileLen)
@@ -105,15 +112,23 @@ func RenderMap(m *Map, maxWidth, maxHeight int) (*image.NRGBA, error) {
 }
 
 // collectRenderSteps collects all renderable layers (tiles and quads) in
-// back-to-front order from groups with parallax 100/100 and offset 0/0.
+// back-to-front order from groups with parallax 100/100.  Group offsets are
+// converted to tile units and propagated into render steps so that the crop
+// and rendering phases account for them.
 func collectRenderSteps(m *Map) []renderStep {
 	var steps []renderStep
 	for i := range m.Groups {
 		g := &m.Groups[i]
 
-		if g.ParallaxX != 100 || g.ParallaxY != 100 || g.OffsetX != 0 || g.OffsetY != 0 || g.Clipping {
+		if g.ParallaxX != 100 || g.ParallaxY != 100 || g.Clipping {
 			continue
 		}
+
+		// Group offset in game-pixels → tile units.
+		tileOffX := int(g.OffsetX) / pixelsPerTile
+		tileOffY := int(g.OffsetY) / pixelsPerTile
+		quadOffX := float64(g.OffsetX) / float64(pixelsPerTile)
+		quadOffY := float64(g.OffsetY) / float64(pixelsPerTile)
 
 		for j := range g.Layers {
 			l := &g.Layers[j]
@@ -139,6 +154,8 @@ func collectRenderSteps(m *Map) []renderStep {
 						tiles:   l.Tiles,
 						width:   l.Width,
 						height:  l.Height,
+						offsetX: tileOffX,
+						offsetY: tileOffY,
 					},
 				})
 			case LayerKindQuads:
@@ -149,6 +166,8 @@ func collectRenderSteps(m *Map) []renderStep {
 					quad: renderQuadLayer{
 						quads:   l.Quads,
 						imageID: l.QuadImageID,
+						offsetX: quadOffX,
+						offsetY: quadOffY,
 					},
 				})
 			}
@@ -168,18 +187,22 @@ func extractTileLayers(steps []renderStep) []renderLayer {
 	return layers
 }
 
-// tileRect is an axis-aligned bounding box in tile coordinates.
+// tileRect is an axis-aligned bounding box in world tile coordinates.
+// Signed to support groups with negative offsets.
 type tileRect struct {
-	minX, minY, maxX, maxY uint32
+	minX, minY, maxX, maxY int32
 }
 
-// cropToNonAir computes the bounding box of all non-air tiles across all layers.
+// cropToNonAir computes the bounding box of all non-air tiles across all
+// layers in world tile coordinates (layer position + group offset).
 // Uses edge scanning: finds the first/last non-air row and column per layer
 // instead of scanning every tile.
 func cropToNonAir(layers []renderLayer) tileRect {
 	r := tileRect{
-		minX: math.MaxUint32,
-		minY: math.MaxUint32,
+		minX: math.MaxInt32,
+		minY: math.MaxInt32,
+		maxX: math.MinInt32,
+		maxY: math.MinInt32,
 	}
 	for _, l := range layers {
 		if len(l.tiles) == 0 {
@@ -241,17 +264,23 @@ func cropToNonAir(layers []renderLayer) tileRect {
 		}
 	foundMaxX:
 
-		if uint32(lminX) < r.minX {
-			r.minX = uint32(lminX)
+		// Convert layer-local bounds to world tile coords via group offset.
+		wMinX := int32(lminX + l.offsetX)
+		wMinY := int32(lminY + l.offsetY)
+		wMaxX := int32(lmaxX + l.offsetX)
+		wMaxY := int32(lmaxY + l.offsetY)
+
+		if wMinX < r.minX {
+			r.minX = wMinX
 		}
-		if uint32(lminY) < r.minY {
-			r.minY = uint32(lminY)
+		if wMinY < r.minY {
+			r.minY = wMinY
 		}
-		if uint32(lmaxX) > r.maxX {
-			r.maxX = uint32(lmaxX)
+		if wMaxX > r.maxX {
+			r.maxX = wMaxX
 		}
-		if uint32(lmaxY) > r.maxY {
-			r.maxY = uint32(lmaxY)
+		if wMaxY > r.maxY {
+			r.maxY = wMaxY
 		}
 	}
 	return r
@@ -261,7 +290,7 @@ func cropToNonAir(layers []renderLayer) tileRect {
 // image stays manageable. Starts at 64 and halves until the total pixel count
 // fits within 2× the output area (down from 4×), trading minor quality for
 // significantly less rendering and scaling work.
-func scaleTileLen(cropW, cropH, targetSize uint32) uint32 {
+func scaleTileLen(cropW, cropH int32, targetSize uint32) uint32 {
 	tileLen := uint32(64)
 	for tileLen > 1 {
 		pixels := uint64(tileLen) * uint64(tileLen) * uint64(cropW) * uint64(cropH)
@@ -301,8 +330,12 @@ func prepareTilesets(m *Map, layers []renderLayer, tileLen uint32) map[int]*imag
 		}
 
 		src := m.Images[imgID]
-		if src.RGBA == nil || src.Width == 0 || src.Height == 0 {
-			// External image not available: solid white
+		srcRGBA := src.RGBA
+		if srcRGBA == nil && src.External {
+			srcRGBA = resolveExternalImage(src.Name)
+		}
+		if srcRGBA == nil || src.Width == 0 || src.Height == 0 {
+			// Image not available: solid white
 			white := image.NewNRGBA(image.Rect(0, 0, resultSide, resultSide))
 			for i := 0; i < len(white.Pix); i += 4 {
 				white.Pix[i] = 255
@@ -317,7 +350,7 @@ func prepareTilesets(m *Map, layers []renderLayer, tileLen uint32) map[int]*imag
 
 		// Scale tileset to resultSide × resultSide using area averaging
 		scaled := image.NewNRGBA(image.Rect(0, 0, resultSide, resultSide))
-		draw.ApproxBiLinear.Scale(scaled, scaled.Bounds(), src.RGBA, src.RGBA.Bounds(), draw.Src, nil)
+		draw.ApproxBiLinear.Scale(scaled, scaled.Bounds(), srcRGBA, srcRGBA.Bounds(), draw.Src, nil)
 
 		// Clear air tile (top-left tile)
 		clearAirTile(scaled, tileLen)
@@ -357,10 +390,14 @@ func prepareQuadImages(m *Map, steps []renderStep) map[int]*image.NRGBA {
 			continue
 		}
 		src := m.Images[imgID]
-		if src.RGBA == nil {
+		srcRGBA := src.RGBA
+		if srcRGBA == nil && src.External {
+			srcRGBA = resolveExternalImage(src.Name)
+		}
+		if srcRGBA == nil {
 			continue
 		}
-		images[imgID] = src.RGBA
+		images[imgID] = srcRGBA
 	}
 	return images
 }
@@ -410,22 +447,30 @@ func renderSingleTileLayer(
 	lcB := uint32(l.color.B)
 	lcA := uint32(l.color.A)
 
-	layerMaxY := l.height
-	if uint32(layerMaxY) > crop.maxY {
-		layerMaxY = int(crop.maxY)
+	// Iterate over layer tiles that fall within the crop region.
+	// Layer tile (lx,ly) maps to world tile (lx+offsetX, ly+offsetY).
+	// We render world tiles in [crop.minX, crop.maxX) × [crop.minY, crop.maxY).
+	startLayerY := int(crop.minY) - l.offsetY
+	endLayerY := int(crop.maxY) - l.offsetY
+	startLayerX := int(crop.minX) - l.offsetX
+	endLayerX := int(crop.maxX) - l.offsetX
+	if startLayerY < 0 {
+		startLayerY = 0
 	}
-	layerMaxX := l.width
-	if uint32(layerMaxX) > crop.maxX {
-		layerMaxX = int(crop.maxX)
+	if endLayerY > l.height {
+		endLayerY = l.height
 	}
-
-	minY := int(crop.minY)
-	minX := int(crop.minX)
+	if startLayerX < 0 {
+		startLayerX = 0
+	}
+	if endLayerX > l.width {
+		endLayerX = l.width
+	}
 
 	tlBytes := tl * 4 // bytes per tile row in NRGBA
 
-	for layerY := minY; layerY < layerMaxY; layerY++ {
-		for layerX := minX; layerX < layerMaxX; layerX++ {
+	for layerY := startLayerY; layerY < endLayerY; layerY++ {
+		for layerX := startLayerX; layerX < endLayerX; layerX++ {
 			idx := layerY*l.width + layerX
 			if idx >= len(l.tiles) {
 				continue
@@ -438,8 +483,11 @@ func renderSingleTileLayer(
 			tileX := int(tile.ID) % tilesetGridSize
 			tileY := int(tile.ID) / tilesetGridSize
 
-			baseDstY := (layerY - minY) * tl
-			baseDstX := (layerX - minX) * tl
+			// Destination on canvas = world position minus crop origin.
+			worldX := layerX + l.offsetX
+			worldY := layerY + l.offsetY
+			baseDstY := (worldY - int(crop.minY)) * tl
+			baseDstX := (worldX - int(crop.minX)) * tl
 			baseSrcX := tileX * tl
 			baseSrcY := tileY * tl
 
@@ -563,7 +611,7 @@ func renderSingleQuadLayer(
 ) {
 	tex := quadImages[ql.imageID] // may be nil (vertex colors only)
 	for i := range ql.quads {
-		renderQuadOnCanvas(canvas, &ql.quads[i], tex, crop, tileLen)
+		renderQuadOnCanvas(canvas, &ql.quads[i], tex, crop, tileLen, ql.offsetX, ql.offsetY)
 	}
 }
 
@@ -580,16 +628,18 @@ func renderQuadOnCanvas(
 	tex *image.NRGBA,
 	crop *tileRect,
 	tileLen uint32,
+	offsetX, offsetY float64,
 ) {
 	tl := float64(tileLen)
 	cropMinX := float64(crop.minX)
 	cropMinY := float64(crop.minY)
 
-	// Convert quad corner positions from tile coords to canvas pixel coords
+	// Convert quad corner positions from tile coords to canvas pixel coords,
+	// applying the group offset.
 	var px, py [4]float64
 	for i := 0; i < 4; i++ {
-		px[i] = (q.Points[i].X - cropMinX) * tl
-		py[i] = (q.Points[i].Y - cropMinY) * tl
+		px[i] = (q.Points[i].X + offsetX - cropMinX) * tl
+		py[i] = (q.Points[i].Y + offsetY - cropMinY) * tl
 	}
 
 	// Texture coords (normalized [0,1])

@@ -24,11 +24,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/jxsl13/asset-service/config"
-	"github.com/jxsl13/asset-service/http/api"
-	httpserver "github.com/jxsl13/asset-service/http/server"
-	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
-	sqlpkg "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/config"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	httpserver "github.com/jxsl13/teeworlds-asset-service/http/server"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/clientip"
+	sqlpkg "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // ── Test helpers ──────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/clientip"
 )
 
 const (

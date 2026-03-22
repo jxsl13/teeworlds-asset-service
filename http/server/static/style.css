@@ -667,6 +667,19 @@ a:hover { color: var(--link-hover); }
   text-decoration: none;
 }
 .site-footer a:hover { text-decoration: underline; }
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}
+.octocat {
+  width: 16px;
+  height: 16px;
+  fill: var(--text-dim);
+  vertical-align: middle;
+}
+.github-link:hover .octocat { fill: var(--text); }
 
 /* ── Selection bar ── */
 .items-table tr.row-selected { background: rgba(196,85,10,0.08); }
@@ -769,7 +782,6 @@ a:hover { color: var(--link-hover); }
     padding: 0.6rem;
     box-shadow: var(--shadow);
     min-width: 0;
-    border-bottom: none;
   }
   .items-table tr:hover { background: #faf6ee; }
 

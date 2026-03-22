@@ -6,8 +6,8 @@ import (
 	"github.com/google/uuid"
 	oapitypes "github.com/oapi-codegen/runtime/types"
 
-	"github.com/jxsl13/asset-service/http/api"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // Item is the domain entity returned from a search.

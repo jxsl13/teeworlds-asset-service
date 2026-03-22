@@ -15,16 +15,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/jxsl13/asset-service/config"
-	"github.com/jxsl13/asset-service/http/api"
-	httpserver "github.com/jxsl13/asset-service/http/server"
-	"github.com/jxsl13/asset-service/http/server/middleware/clientip"
-	"github.com/jxsl13/asset-service/http/server/middleware/csrf"
-	"github.com/jxsl13/asset-service/http/server/middleware/htmx"
-	"github.com/jxsl13/asset-service/http/server/middleware/oidcauth"
-	"github.com/jxsl13/asset-service/http/server/middleware/ratelimit"
-	"github.com/jxsl13/asset-service/http/server/middleware/requestlog"
-	postgresql "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/config"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	httpserver "github.com/jxsl13/teeworlds-asset-service/http/server"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/clientip"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/csrf"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/htmx"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/oidcauth"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/ratelimit"
+	"github.com/jxsl13/teeworlds-asset-service/http/server/middleware/requestlog"
+	postgresql "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 func main() {
@@ -131,8 +131,8 @@ func run() error {
 	r.Get("/auth/callback", auth.CallbackHandler())
 	r.Get("/auth/logout", auth.LogoutHandler())
 
-	// Serve embedded static assets with content-based ETags (cache warmed at startup).
-	r.Handle("/static/*", http.StripPrefix("/static/", httpserver.NewStaticHandler()))
+	// Serve embedded static assets (htmx.min.js etc.).
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(httpserver.StaticFS())))
 
 	// Serve optional branding files (header image, favicon) from local paths.
 	if cfg.Branding.HeaderImagePath != "" {

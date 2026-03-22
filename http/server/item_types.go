@@ -4,8 +4,8 @@ import (
 	"context"
 	"slices"
 
-	"github.com/jxsl13/asset-service/http/api"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // ListItemTypes implements api.StrictServerInterface.

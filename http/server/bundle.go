@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jxsl13/asset-service/http/api"
-	sqlc "github.com/jxsl13/asset-service/sql"
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
+	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
 // DownloadBundle implements api.StrictServerInterface.
