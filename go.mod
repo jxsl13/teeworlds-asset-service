@@ -1,6 +1,6 @@
 module github.com/jxsl13/teeworlds-asset-service
 
-go 1.25.2
+go 1.26.1
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
