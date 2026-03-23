@@ -67,7 +67,7 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 // It returns an HTML fragment with the items grid and pagination controls.
 func (s *Server) RenderItemList(ctx context.Context, request api.RenderItemListRequestObject) (api.RenderItemListResponseObject, error) {
 	limit := s.itemsPerPage
-	if request.Params.Limit != nil {
+	if request.Params.Limit != nil && *request.Params.Limit < limit {
 		limit = *request.Params.Limit
 	}
 	offset := 0
