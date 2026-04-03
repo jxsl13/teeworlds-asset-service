@@ -53,7 +53,6 @@ const (
 	CcByNcSa License = "cc-by-nc-sa"
 	CcByNd   License = "cc-by-nd"
 	CcBySa   License = "cc-by-sa"
-	Custom   License = "custom"
 	Gpl2     License = "gpl-2"
 	Gpl3     License = "gpl-3"
 	Mit      License = "mit"
@@ -80,8 +79,6 @@ func (e License) Valid() bool {
 		return true
 	case CcBySa:
 		return true
-	case Custom:
-		return true
 	case Gpl2:
 		return true
 	case Gpl3:
@@ -99,16 +96,25 @@ func (e License) Valid() bool {
 
 // Defines values for SortField.
 const (
-	CreatedAt SortField = "created_at"
-	Name      SortField = "name"
+	SortCreatedAt SortField = "created_at"
+	SortCreators  SortField = "creators"
+	SortLicense   SortField = "license"
+	SortName      SortField = "name"
+	SortSize      SortField = "size"
 )
 
 // Valid indicates whether the value is a known member of the SortField enum.
 func (e SortField) Valid() bool {
 	switch e {
-	case CreatedAt:
+	case SortCreatedAt:
 		return true
-	case Name:
+	case SortCreators:
+		return true
+	case SortLicense:
+		return true
+	case SortName:
+		return true
+	case SortSize:
 		return true
 	default:
 		return false
@@ -131,6 +137,12 @@ func (e SortOrder) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// ConfigResponse defines model for ConfigResponse.
+type ConfigResponse struct {
+	// ItemsPerPage Maximum number of items returned per page.
+	ItemsPerPage int `json:"items_per_page"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -157,7 +169,6 @@ type ItemMetadata struct {
 	// - mit          – MIT License
 	// - apache-2     – Apache License 2.0
 	// - zlib         – zlib License
-	// - custom       – Custom / other known license
 	// - unknown      – License not specified
 	License License `json:"license"`
 
@@ -187,7 +198,6 @@ type ItemTypesResponse struct {
 // - mit          – MIT License
 // - apache-2     – Apache License 2.0
 // - zlib         – zlib License
-// - custom       – Custom / other known license
 // - unknown      – License not specified
 type License string
 

@@ -72,6 +72,10 @@ func (s *Server) UploadItem(ctx context.Context, request api.UploadItemRequestOb
 		return api.UploadItem400JSONResponse{Error: err.Error()}, nil
 	}
 
+	if !meta.License.Valid() {
+		return api.UploadItem400JSONResponse{Error: fmt.Sprintf("invalid license %q", meta.License)}, nil
+	}
+
 	filePart, filename, err := s.parseFilePart(request)
 	if err != nil {
 		return api.UploadItem400JSONResponse{Error: err.Error()}, nil

@@ -26,6 +26,7 @@ type ListQuery struct {
 var validSortFields = map[string]bool{
 	"name":       true,
 	"creators":   true,
+	"license":    true,
 	"size":       true,
 	"created_at": true,
 }

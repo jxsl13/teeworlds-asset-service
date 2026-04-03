@@ -204,7 +204,6 @@ var licenseOptions =
   '<option value="mit">MIT</option>' +
   '<option value="apache-2">Apache 2.0</option>' +
   '<option value="zlib">zlib</option>' +
-  '<option value="custom">Custom / Other</option>' +
   '<option value="unknown" selected>Unknown</option>';
 
 function nameFromFile(filename) {
@@ -590,7 +589,7 @@ function renderUploadGroups() {
       if (creatorStr) {
         var tagContainer = div.querySelector('.tag-input');
         var tagInput = tagContainer.querySelector('input');
-        creatorStr.split(/[,&]|\band\b/i).forEach(function (c) {
+        creatorStr.split(/[,&;]|\band\b|!\s/i).forEach(function (c) {
           c = c.trim();
           if (c) {
             tagInput.value = c;
@@ -916,8 +915,37 @@ function adminDeleteGroup(assetType, groupID, name) {
       if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
       var row = document.querySelector('tr[data-group-id="' + groupID + '"]');
       if (row) row.remove();
+      delete selectedGroups[groupID];
+      updateSelectionBar();
     })
     .catch(function (err) { alert('Delete failed: ' + err.message); });
+}
+
+function adminDeleteSelected() {
+  var ids = Object.keys(selectedGroups);
+  if (ids.length === 0) return;
+  if (!confirm('Delete ' + ids.length + ' selected group(s) and all their variants? This cannot be undone.')) return;
+  var tab = document.querySelector('.tab.active');
+  var assetType = tab ? tab.getAttribute('data-type') : '';
+  var failed = 0;
+  var pending = ids.length;
+  ids.forEach(function (gid) {
+    fetch('/admin/' + assetType + '/' + gid, { method: 'DELETE', headers: { 'X-CSRF-Token': getCSRFToken() } })
+      .then(function (res) {
+        if (!res.ok) { failed++; return; }
+        var row = document.querySelector('tr[data-group-id="' + gid + '"]');
+        if (row) row.remove();
+        delete selectedGroups[gid];
+      })
+      .catch(function () { failed++; })
+      .finally(function () {
+        pending--;
+        if (pending === 0) {
+          if (failed > 0) alert(failed + ' deletion(s) failed.');
+          location.reload();
+        }
+      });
+  });
 }
 
 /* ── Edit modal state ──────────────────────────────────────────────────────── */

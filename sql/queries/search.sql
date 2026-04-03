@@ -102,6 +102,10 @@ ORDER BY
            FROM search_value sv3
            WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'creators'),
           '')
+      WHEN 'license'    THEN COALESCE(
+          (SELECT sv3.key_value FROM search_value sv3
+           WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'license' LIMIT 1),
+          '')
       WHEN 'size'       THEN lpad(cast(COALESCE(
           (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),
           0) as text), 20, '0')
@@ -119,6 +123,10 @@ ORDER BY
           (SELECT string_agg(sv3.key_value, ', ' ORDER BY sv3.key_value)
            FROM search_value sv3
            WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'creators'),
+          '')
+      WHEN 'license'    THEN COALESCE(
+          (SELECT sv3.key_value FROM search_value sv3
+           WHERE sv3.group_id = ag.group_id AND sv3.key_name = 'license' LIMIT 1),
           '')
       WHEN 'size'       THEN lpad(cast(COALESCE(
           (SELECT SUM(ai.size) FROM asset_item ai WHERE ai.group_id = ag.group_id),

@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -99,6 +100,13 @@ func main() {
 	}
 	log.Printf("processing %d skins (filter: %q)", len(skins), *skinType)
 
+	// Pre-fetch existing skin names to skip already-uploaded skins.
+	existing, err := seedutil.FetchExistingNames(*addr, "skin")
+	if err != nil {
+		log.Fatalf("failed to fetch existing skins: %v", err)
+	}
+	log.Printf("found %d existing skins on server", len(existing))
+
 	// Create an HTTP client with a cookie jar for the target server.
 	// This lets the CSRF cookie be stored and sent automatically.
 	uploadClient := seedutil.NewUploadClient()
@@ -113,6 +121,7 @@ func main() {
 	var (
 		okCount   atomic.Int64
 		failCount atomic.Int64
+		skipCount atomic.Int64
 	)
 
 	sem := make(chan struct{}, *concurrency)
@@ -127,6 +136,12 @@ func main() {
 		go func(s ddnetSkin) {
 			defer wg.Done()
 			defer func() { <-sem }()
+
+			if _, ok := existing[s.Name]; ok {
+				skipCount.Add(1)
+				log.Printf("SKIP  %-40s (already exists)", s.Name)
+				return
+			}
 
 			license := seedutil.MapLicense(s.License)
 			creators := seedutil.ParseCreators(s.Creator)
@@ -155,8 +170,14 @@ func main() {
 			}
 			if err := seedutil.Retry(ctx, func() error {
 				return seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", imgData)
-			}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+			}, http.StatusBadGateway, http.StatusInternalServerError); err != nil {
 				if ctx.Err() != nil {
+					return
+				}
+				var httpErr *seedutil.HTTPStatusError
+				if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusConflict {
+					skipCount.Add(1)
+					log.Printf("SKIP  %-40s (already exists)", s.Name)
 					return
 				}
 				log.Printf("FAIL  upload    %-40s %v", s.Name, err)
@@ -194,8 +215,14 @@ func main() {
 				}
 				if err := seedutil.Retry(ctx, func() error {
 					return seedutil.UploadAsset(uploadClient, csrfToken, *addr, "skin", s.Name, license, creators, s.Name+".png", uhdData)
-				}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+				}, http.StatusBadGateway, http.StatusInternalServerError); err != nil {
 					if ctx.Err() != nil {
+						return
+					}
+					var httpErr *seedutil.HTTPStatusError
+					if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusConflict {
+						skipCount.Add(1)
+						log.Printf("SKIP  %-40s (UHD, already exists)", s.Name)
 						return
 					}
 					log.Printf("FAIL  upload    %-40s (UHD) %v", s.Name, err)
@@ -213,11 +240,12 @@ func main() {
 
 	ok := okCount.Load()
 	fail := failCount.Load()
+	skip := skipCount.Load()
 	if ctx.Err() != nil {
-		log.Printf("interrupted: %d uploaded, %d failed before shutdown", ok, fail)
+		log.Printf("interrupted: %d uploaded, %d skipped, %d failed before shutdown", ok, skip, fail)
 		os.Exit(1)
 	}
-	log.Printf("done: %d uploaded, %d failed", ok, fail)
+	log.Printf("done: %d uploaded, %d skipped (already exist), %d failed", ok, skip, fail)
 	if fail > 0 {
 		os.Exit(1)
 	}

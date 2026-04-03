@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/jxsl13/teeworlds-asset-service/http/api"
 	sqlc "github.com/jxsl13/teeworlds-asset-service/sql"
 )
 
@@ -176,6 +178,9 @@ func (s *Server) AdminUpdateGroup(w http.ResponseWriter, r *http.Request) {
 
 		if body.License != nil {
 			license := strings.TrimSpace(*body.License)
+			if license != "" && !api.License(license).Valid() {
+				return errBadRequest(fmt.Sprintf("invalid license %q", license))
+			}
 			if err := tx.DeleteSearchValues(ctx, sqlc.DeleteSearchValuesParams{GroupID: uuidToPgtype(groupID), KeyName: "license"}); err != nil {
 				return err
 			}

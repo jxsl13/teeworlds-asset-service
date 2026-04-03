@@ -721,6 +721,16 @@ a:hover { color: var(--link-hover); }
   cursor: pointer;
 }
 .btn-clear-selection:hover { color: var(--text); border-color: var(--text-dim); }
+.btn-delete-selected {
+  padding: 0.4rem 1rem;
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-delete-selected:hover { opacity: 0.85; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    Responsive Design

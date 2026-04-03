@@ -190,6 +190,19 @@ func Parse(r io.Reader) (*Map, error) {
 	return parseMap(df)
 }
 
+// ParseInfo reads only the metadata (author, version, credits, license)
+// from a Teeworlds/DDNet map without decoding images or layers.
+func ParseInfo(r io.Reader) (Info, error) {
+	df, err := parseDatafile(r)
+	if err != nil {
+		return Info{}, fmt.Errorf("datafile: %w", err)
+	}
+	if err := checkMapVersion(df); err != nil {
+		return Info{}, err
+	}
+	return parseInfo(df)
+}
+
 func parseMap(df *datafile) (*Map, error) {
 	m := &Map{}
 

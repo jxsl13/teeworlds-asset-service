@@ -131,6 +131,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/config:
+    get:
+      operationId: getConfig
+      summary: Get server configuration
+      tags:
+        - search
+      description: >
+        Returns public server configuration values such as pagination limits.
+      responses:
+        "200":
+          description: Server configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigResponse"
+
   /api/item-types:
     get:
       operationId: listItemTypes
@@ -752,7 +768,6 @@ components:
         - mit          – MIT License
         - apache-2     – Apache License 2.0
         - zlib         – zlib License
-        - custom       – Custom / other known license
         - unknown      – License not specified
       enum:
         - cc0
@@ -767,7 +782,6 @@ components:
         - mit
         - apache-2
         - zlib
-        - custom
         - unknown
 
     ItemMetadata:
@@ -834,6 +848,14 @@ components:
           type: string
           description: Human-readable error message.
 
+    ConfigResponse:
+      type: object
+      required: [items_per_page]
+      properties:
+        items_per_page:
+          type: integer
+          description: Maximum number of items returned per page.
+
     ItemTypesResponse:
       type: object
       required: [asset_types]
@@ -876,8 +898,17 @@ components:
       description: Field to sort results by.
       enum:
         - name
+        - creators
+        - license
+        - size
         - created_at
       default: name
+      x-enum-varnames:
+        - SortName
+        - SortCreators
+        - SortLicense
+        - SortSize
+        - SortCreatedAt
 
     SortOrder:
       type: string

@@ -280,15 +280,10 @@ func UploadAsset(client *http.Client, csrfToken, baseURL, assetType, name, licen
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	switch resp.StatusCode {
-	case http.StatusCreated:
+	if resp.StatusCode == http.StatusCreated {
 		return nil
-	case http.StatusConflict:
-		// Already exists — not an error for seeding.
-		return nil
-	default:
-		return &HTTPStatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
+	return &HTTPStatusError{StatusCode: resp.StatusCode, Body: string(respBody)}
 }
 
 // ── creator parsing ──────────────────────────────────────────────────────────
@@ -329,6 +324,8 @@ func ParseCreators(creator string) []string {
 	s = strings.ReplaceAll(s, "&", ",")
 	s = strings.ReplaceAll(s, " + ", ",")
 	s = strings.ReplaceAll(s, " and ", ",")
+	s = strings.ReplaceAll(s, "! ", ",")
+	s = strings.ReplaceAll(s, "; ", ",")
 
 	var result []string
 	for _, part := range strings.Split(s, ",") {
@@ -347,37 +344,143 @@ func ParseCreators(creator string) []string {
 
 // ── license mapping ──────────────────────────────────────────────────────────
 
-// MapLicense converts a DDNet license string to an asset-service license enum value.
-func MapLicense(ddnetLicense string) string {
-	normalized := strings.TrimSpace(strings.ToLower(ddnetLicense))
-	switch {
-	case normalized == "cc0":
-		return "cc0"
-	case normalized == "cc by" || normalized == "cc-by":
-		return "cc-by"
-	case normalized == "cc by-sa" || normalized == "cc-by-sa":
-		return "cc-by-sa"
-	case normalized == "cc by-nd" || normalized == "cc-by-nd":
-		return "cc-by-nd"
-	case normalized == "cc by-nc" || normalized == "cc-by-nc":
-		return "cc-by-nc"
-	case normalized == "cc by-nc-sa" || normalized == "cc-by-nc-sa":
-		return "cc-by-nc-sa"
-	case normalized == "cc by-nc-nd" || normalized == "cc-by-nc-nd":
-		return "cc-by-nc-nd"
-	case normalized == "gpl-2" || normalized == "gpl2":
-		return "gpl-2"
-	case normalized == "gpl-3" || normalized == "gpl3":
-		return "gpl-3"
-	case normalized == "mit":
-		return "mit"
-	case normalized == "apache-2" || normalized == "apache 2.0" || normalized == "apache-2.0":
-		return "apache-2"
-	case normalized == "zlib":
-		return "zlib"
-	case normalized == "unknown" || normalized == "":
+// licensePattern pairs a regex with the canonical license enum value.
+type licensePattern struct {
+	re    *regexp.Regexp
+	value string
+}
+
+// licensePatterns is evaluated in order; more specific patterns come first.
+var licensePatterns = []licensePattern{
+	{regexp.MustCompile(`\bcc\b.*\bby\b.*\bnc\b.*\bsa\b`), "cc-by-nc-sa"},
+	{regexp.MustCompile(`\bcc\b.*\bby\b.*\bnc\b.*\bnd\b`), "cc-by-nc-nd"},
+	{regexp.MustCompile(`\bcc\b.*\bby\b.*\bnc\b`), "cc-by-nc"},
+	{regexp.MustCompile(`\bcc\b.*\bby\b.*\bsa\b`), "cc-by-sa"},
+	{regexp.MustCompile(`\bcc\b.*\bby\b.*\bnd\b`), "cc-by-nd"},
+	{regexp.MustCompile(`\bcc\b.*\bby\b`), "cc-by"},
+	{regexp.MustCompile(`\bcc\s*0\b|\bcc\b.*\bzero\b|\bpublic\s*domain\b`), "cc0"},
+	{regexp.MustCompile(`\bgpl\b.*\b3\b`), "gpl-3"},
+	{regexp.MustCompile(`\bgpl\b.*\b2\b`), "gpl-2"},
+	{regexp.MustCompile(`\bgpl\b`), "gpl-3"},
+	{regexp.MustCompile(`\bmit\b`), "mit"},
+	{regexp.MustCompile(`\bapache\b`), "apache-2"},
+	{regexp.MustCompile(`\bzlib\b`), "zlib"},
+}
+
+// MapLicense maps a free-form license string to the closest known license
+// enum value.  It first tries exact matches against canonical values, then
+// falls back to regex-based fuzzy matching.  Unrecognised strings map to
+// "unknown".
+func MapLicense(raw string) string {
+	normalized := strings.TrimSpace(strings.ToLower(raw))
+	if normalized == "" {
 		return "unknown"
-	default:
-		return "custom"
 	}
+
+	// Exact match against known enum values.
+	switch normalized {
+	case "cc0", "cc-by", "cc-by-sa", "cc-by-nd", "cc-by-nc",
+		"cc-by-nc-sa", "cc-by-nc-nd", "gpl-2", "gpl-3",
+		"mit", "apache-2", "zlib", "unknown":
+		return normalized
+	}
+
+	// Fuzzy match: strip non-alphanumeric chars and match patterns.
+	scrubbed := regexp.MustCompile(`[^a-z0-9 ]`).ReplaceAllString(normalized, " ")
+	scrubbed = regexp.MustCompile(`\s+`).ReplaceAllString(scrubbed, " ")
+	scrubbed = strings.TrimSpace(scrubbed)
+
+	for _, p := range licensePatterns {
+		if p.re.MatchString(scrubbed) {
+			return p.value
+		}
+	}
+
+	return "unknown"
+}
+
+// ── existing-asset lookup ────────────────────────────────────────────────────
+
+// configResponse mirrors the JSON returned by GET /api/config.
+type configResponse struct {
+	ItemsPerPage int `json:"items_per_page"`
+}
+
+// FetchItemsPerPage fetches the configured maximum page size from the
+// asset-service's /api/config endpoint.
+func FetchItemsPerPage(baseURL string) (int, error) {
+	resp, err := HTTPGet(baseURL + "/api/config")
+	if err != nil {
+		return 0, fmt.Errorf("fetch config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return 0, fmt.Errorf("fetch config: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var cfg configResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return 0, fmt.Errorf("decode config: %w", err)
+	}
+	if cfg.ItemsPerPage <= 0 {
+		return 0, fmt.Errorf("server returned invalid items_per_page: %d", cfg.ItemsPerPage)
+	}
+	return cfg.ItemsPerPage, nil
+}
+
+// listResponse mirrors the JSON returned by GET /api/{asset_type}.
+type listResponse struct {
+	Results []struct {
+		ItemValue map[string]interface{} `json:"item_value"`
+	} `json:"results"`
+	Total int `json:"total"`
+}
+
+// FetchExistingNames paginates through the list endpoint of the asset-service
+// and returns a set of all existing item names for the given asset type.
+// It queries /api/config to determine the server's page size limit, falling
+// back to 100 if the endpoint is unavailable.
+func FetchExistingNames(baseURL, assetType string) (map[string]struct{}, error) {
+	pageSize, err := FetchItemsPerPage(baseURL)
+	if err != nil {
+		log.Printf("WARN  config endpoint unavailable, using default page size 100: %v", err)
+		pageSize = 100
+	}
+
+	existing := make(map[string]struct{})
+	offset := 0
+
+	for {
+		listURL := fmt.Sprintf("%s/api/%s?limit=%d&offset=%d", baseURL, url.PathEscape(assetType), pageSize, offset)
+		resp, err := HTTPGet(listURL)
+		if err != nil {
+			return nil, fmt.Errorf("fetch existing %s names: %w", assetType, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			return nil, fmt.Errorf("fetch existing %s names: HTTP %d: %s", assetType, resp.StatusCode, string(body))
+		}
+
+		var page listResponse
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			return nil, fmt.Errorf("decode %s list response: %w", assetType, err)
+		}
+
+		for _, item := range page.Results {
+			if name, ok := item.ItemValue["name"].(string); ok {
+				existing[name] = struct{}{}
+			}
+		}
+
+		offset += len(page.Results)
+		if offset >= page.Total || len(page.Results) == 0 {
+			break
+		}
+	}
+
+	return existing, nil
 }

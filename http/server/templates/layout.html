@@ -27,8 +27,6 @@
         {{range $i, $t := .ItemTypes}}
         <button class="tab{{if eq $t $.ActiveType}} active{{end}}"
                 data-type="{{$t}}"
-                hx-get="/{{$t}}"
-                hx-target="#content"
                 onclick="switchTab(this)">
           {{$t}}
         </button>
@@ -65,6 +63,7 @@
   <div class="selection-bar" id="selectionBar" style="display:none;">
     <span id="selectionCount">0 selected</span>
     <button class="btn-download-selected" onclick="downloadSelected()">&#x2B07; Download ZIP</button>
+    {{if .IsAdmin}}<button class="btn-delete-selected" onclick="adminDeleteSelected()">&times; Delete</button>{{end}}
     <button class="btn-clear-selection" onclick="clearSelection()">Clear</button>
   </div>
 

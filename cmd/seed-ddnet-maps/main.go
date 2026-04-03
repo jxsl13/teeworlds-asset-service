@@ -125,6 +125,13 @@ func main() {
 	allMaps = deduplicateMaps(allMaps)
 	log.Printf("after deduplication: %d unique maps", len(allMaps))
 
+	// Pre-fetch existing map names to skip already-uploaded maps.
+	existing, err := seedutil.FetchExistingNames(*addr, "map")
+	if err != nil {
+		log.Fatalf("failed to fetch existing maps: %v", err)
+	}
+	log.Printf("found %d existing maps on server", len(existing))
+
 	// Create HTTP client with cookie jar for CSRF handling.
 	uploadClient := seedutil.NewUploadClient()
 
@@ -153,6 +160,12 @@ func main() {
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			if _, ok := existing[m.Name]; ok {
+				skipCount.Add(1)
+				log.Printf("SKIP  %-40s (%s, already exists)", m.Name, m.Type)
+				return
+			}
+
 			if err := throttle.Wait(ctx); err != nil {
 				return
 			}
@@ -175,13 +188,14 @@ func main() {
 			}
 			if err := seedutil.Retry(ctx, func() error {
 				return seedutil.UploadAsset(uploadClient, csrfToken, *addr, "map", m.Name, ddnetMapsLicense, m.Creators, m.Name+".map", mapData)
-			}, http.StatusBadGateway, http.StatusConflict, http.StatusInternalServerError); err != nil {
+			}, http.StatusBadGateway, http.StatusInternalServerError); err != nil {
 				if ctx.Err() != nil {
 					return
 				}
 				var httpErr *seedutil.HTTPStatusError
-				if errors.As(err, &httpErr) && httpErr.StatusCode == 409 {
+				if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusConflict {
 					skipCount.Add(1)
+					log.Printf("SKIP  %-40s (%s, already exists)", m.Name, m.Type)
 					return
 				}
 				log.Printf("FAIL  upload    %-40s (%s) %v", m.Name, m.Type, err)

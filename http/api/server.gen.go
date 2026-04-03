@@ -22,6 +22,9 @@ type ServerInterface interface {
 	// Render the main UI page
 	// (GET /)
 	RenderUI(w http.ResponseWriter, r *http.Request)
+	// Get server configuration
+	// (GET /api/config)
+	GetConfig(w http.ResponseWriter, r *http.Request)
 	// Download multiple asset groups as a single ZIP archive
 	// (POST /api/download/bundle)
 	DownloadMultiBundle(w http.ResponseWriter, r *http.Request)
@@ -67,6 +70,12 @@ type Unimplemented struct{}
 // Render the main UI page
 // (GET /)
 func (_ Unimplemented) RenderUI(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get server configuration
+// (GET /api/config)
+func (_ Unimplemented) GetConfig(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -156,6 +165,20 @@ func (siw *ServerInterfaceWrapper) RenderUI(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RenderUI(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetConfig(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetConfig(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -821,6 +844,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/", wrapper.RenderUI)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/config", wrapper.GetConfig)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/download/bundle", wrapper.DownloadMultiBundle)
 	})
 	r.Group(func(r chi.Router) {
@@ -891,6 +917,22 @@ type RenderUI500JSONResponse ErrorResponse
 func (response RenderUI500JSONResponse) VisitRenderUIResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetConfigRequestObject struct {
+}
+
+type GetConfigResponseObject interface {
+	VisitGetConfigResponse(w http.ResponseWriter) error
+}
+
+type GetConfig200JSONResponse ConfigResponse
+
+func (response GetConfig200JSONResponse) VisitGetConfigResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1451,6 +1493,9 @@ type StrictServerInterface interface {
 	// Render the main UI page
 	// (GET /)
 	RenderUI(ctx context.Context, request RenderUIRequestObject) (RenderUIResponseObject, error)
+	// Get server configuration
+	// (GET /api/config)
+	GetConfig(ctx context.Context, request GetConfigRequestObject) (GetConfigResponseObject, error)
 	// Download multiple asset groups as a single ZIP archive
 	// (POST /api/download/bundle)
 	DownloadMultiBundle(ctx context.Context, request DownloadMultiBundleRequestObject) (DownloadMultiBundleResponseObject, error)
@@ -1535,6 +1580,30 @@ func (sh *strictHandler) RenderUI(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RenderUIResponseObject); ok {
 		if err := validResponse.VisitRenderUIResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetConfig operation middleware
+func (sh *strictHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	var request GetConfigRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetConfig(ctx, request.(GetConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetConfig")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetConfigResponseObject); ok {
+		if err := validResponse.VisitGetConfigResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
