@@ -58,7 +58,7 @@ function switchTab(btn) {
   var sortInput = document.getElementById('searchSort');
   if (sortInput) sortInput.value = 'name:asc';
   // Reset filter state when switching tabs
-  htmx.ajax('GET', '/' + activeType + '?limit=100&offset=0&sort=name:asc', '#content');
+  htmx.ajax('GET', '/' + activeType + '?limit=' + itemsPerPage + '&offset=0&sort=name:asc', '#content');
 }
 
 /* ── Column sorting ────────────────────────────────────────────────────────── */
@@ -138,7 +138,7 @@ function applySortRequest() {
   // Keep the hidden sort input in sync so search requests include the sort.
   var sortInput = document.getElementById('searchSort');
   if (sortInput) sortInput.value = sortParam;
-  var url = '/' + activeType + '?limit=100&offset=0';
+  var url = '/' + activeType + '?limit=' + itemsPerPage + '&offset=0';
   var search = document.getElementById('search');
   var q = search ? search.value.trim() : '';
   if (q) url += '&q=' + encodeURIComponent(q);
@@ -1118,7 +1118,9 @@ function submitEdit() {
     status.className = 'upload-status success';
     setTimeout(function () {
       closeEditModal();
-      htmx.ajax('GET', '/' + activeType, '#content');
+      // Preserve current filters/pagination by re-requesting with the existing query string.
+      var qs = window.location.search || '?limit=' + itemsPerPage + '&offset=0';
+      htmx.ajax('GET', '/' + activeType + qs, '#content');
     }, 600);
   })
   .catch(function (err) {

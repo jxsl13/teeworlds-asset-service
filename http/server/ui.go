@@ -44,6 +44,7 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 		"HasHeaderImage": s.branding.HeaderImagePath != "",
 		"HasFavicon":     s.branding.FaviconPath != "",
 		"SourceURL":      s.branding.SourceURL,
+		"ItemsPerPage":   s.itemsPerPage,
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}
@@ -270,6 +271,7 @@ func (s *Server) renderFullPage(ctx context.Context, activeType, query, contentU
 		"HasHeaderImage": s.branding.HeaderImagePath != "",
 		"HasFavicon":     s.branding.FaviconPath != "",
 		"SourceURL":      s.branding.SourceURL,
+		"ItemsPerPage":   s.itemsPerPage,
 	}); err != nil {
 		return nil, fmt.Errorf("render layout: %w", err)
 	}
