@@ -192,6 +192,14 @@ func main() {
 					return
 				}
 
+				// Validate map structure before uploading to avoid
+				// sending invalid maps to the server (reduces load).
+				if err := twmap.Validate(bytes.NewReader(mapData)); err != nil {
+					log.Printf("SKIP  %-40s (invalid: %v)", e.Name, err)
+					skipCount.Add(1)
+					continue
+				}
+
 				// Extract author/license metadata from the map binary.
 				creators := []string{"Unknown"}
 				license := twdataLicense

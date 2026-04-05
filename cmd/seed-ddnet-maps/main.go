@@ -18,6 +18,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -34,6 +35,7 @@ import (
 
 	"github.com/jxsl13/teeworlds-asset-service/internal/seedutil"
 	"github.com/jxsl13/teeworlds-asset-service/internal/twcfg"
+	"github.com/jxsl13/teeworlds-asset-service/internal/twmap"
 )
 
 const (
@@ -180,6 +182,14 @@ func main() {
 				}
 				log.Printf("FAIL  download  %-40s (%s) %v", m.Name, m.Type, err)
 				failCount.Add(1)
+				return
+			}
+
+			// Validate map structure before uploading to avoid
+			// sending invalid maps to the server (reduces load).
+			if err := twmap.Validate(bytes.NewReader(mapData)); err != nil {
+				log.Printf("SKIP  %-40s (%s, invalid: %v)", m.Name, m.Type, err)
+				skipCount.Add(1)
 				return
 			}
 
