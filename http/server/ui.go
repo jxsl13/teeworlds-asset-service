@@ -28,12 +28,19 @@ func (s *Server) RenderUI(ctx context.Context, _ api.RenderUIRequestObject) (api
 	}
 	slices.Sort(types)
 
+	// Determine the default tab. Fall back to the first type alphabetically
+	// if the configured default is not in the list.
+	defaultType := s.branding.DefaultAssetType
+	if !slices.Contains(types, defaultType) {
+		defaultType = types[0]
+	}
+
 	var buf bytes.Buffer
 	if err := s.layoutTpl.Execute(&buf, map[string]any{
 		"ItemTypes":      types,
-		"ActiveType":     types[0],
+		"ActiveType":     defaultType,
 		"Query":          "",
-		"ContentURL":     "/" + types[0],
+		"ContentURL":     "/" + defaultType,
 		"SortParam":      "name:asc",
 		"IsAdmin":        isAdmin(ctx),
 		"UserName":       userName(ctx),

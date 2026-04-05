@@ -34,6 +34,7 @@ All configuration is via environment variables. See [`docker/dev.env`](docker/de
 | `BRANDING_SUBTITLE` | no | `Community database for skins, maps, gameskins & more` | Tagline below the header heading |
 | `BRANDING_HEADER_IMAGE_PATH` | no | — | Local file path for a logo/image displayed in the header (served at `/branding/header-image`) |
 | `BRANDING_FAVICON_PATH` | no | — | Local file path for the browser tab icon (served at `/branding/favicon`) |
+| `DEFAULT_ASSET_TYPE` | no | `map` | Asset type tab selected on initial page load (e.g. `skin`, `map`, `emoticon`) |
 
 ### Storage
 

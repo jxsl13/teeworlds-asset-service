@@ -160,6 +160,10 @@ type Branding struct {
 	// SourceURL is the HTTPS URL to the project source repository,
 	// derived automatically from the Go module path at build time.
 	SourceURL string
+
+	// DefaultAssetType is the asset type tab selected on initial page load.
+	// Env: DEFAULT_ASSET_TYPE (default: "map")
+	DefaultAssetType string
 }
 
 // envBool returns true when the environment variable is set to "true"
@@ -336,14 +340,18 @@ func Load() (Config, error) {
 
 	// ── Branding ─────────────────────────────────────────────────────────
 	cfg.Branding = Branding{
-		SiteTitle:    "Teeworlds Asset Database",
-		SiteSubtitle: "Community database for skins, maps, gameskins \u0026 more",
+		SiteTitle:        "Teeworlds Asset Database",
+		SiteSubtitle:     "Community database for skins, maps, gameskins \u0026 more",
+		DefaultAssetType: "map",
 	}
 	if v := os.Getenv("BRANDING_TITLE"); v != "" {
 		cfg.Branding.SiteTitle = v
 	}
 	if v := os.Getenv("BRANDING_SUBTITLE"); v != "" {
 		cfg.Branding.SiteSubtitle = v
+	}
+	if v := os.Getenv("DEFAULT_ASSET_TYPE"); v != "" {
+		cfg.Branding.DefaultAssetType = v
 	}
 	if v := os.Getenv("BRANDING_HEADER_IMAGE_PATH"); v != "" {
 		if _, err := os.Stat(v); err != nil {
